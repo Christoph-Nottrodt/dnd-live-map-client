@@ -9,6 +9,7 @@ export const SERVER_URL =
 export function makeSocket() {
   return io(SERVER_URL, {
     transports: ["websocket"],
+    withCredentials: true,
   });
 }
 
@@ -19,6 +20,7 @@ export async function uploadFile(file) {
   const res = await fetch(`${SERVER_URL}/upload`, {
     method: "POST",
     body: fd,
+    credentials: "include",
   });
 
   if (!res.ok) throw new Error(`Upload failed (${res.status})`);
