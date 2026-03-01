@@ -111,7 +111,7 @@ function clampToMap(x, y, mapW, mapH) {
 }
 
 /**
- * Stable color fallback (until Lobby+Server enforce unique picks)
+ * Stable color fallback
  */
 const PLAYER_COLOR_PALETTE = [
     "#00B3FF",
@@ -136,8 +136,12 @@ function hashToIndex(str, mod) {
 
 function getTokenRingColor(token) {
     if (token?.kind === "enemy") return "rgba(160,0,0,0.85)";
-    if (typeof token?.color === "string" && token.color.trim()) return token.color.trim();
-    const idx = hashToIndex(String(token?.id || ""), PLAYER_COLOR_PALETTE.length);
+    if (typeof token?.color === "string" && token.color.trim())
+        return token.color.trim();
+    const idx = hashToIndex(
+        String(token?.id || ""),
+        PLAYER_COLOR_PALETTE.length
+    );
     return PLAYER_COLOR_PALETTE[idx];
 }
 
@@ -158,7 +162,8 @@ function wallStyle(element) {
 
 function formatEventLine(ev) {
     if (!ev) return "";
-    if (ev.type === "attack") return ev.text || `${ev.attackerName ?? "?"} → ${ev.targetName ?? "?"}`;
+    if (ev.type === "attack")
+        return ev.text || `${ev.attackerName ?? "?"} → ${ev.targetName ?? "?"}`;
     if (ev.type === "note") return ev.text || ev.title || "Notiz";
     if (ev.type === "loot") return ev.text || ev.title || "Schatz";
     if (ev.type === "trap") return ev.text || ev.title || "Falle";
@@ -173,19 +178,61 @@ function formatEventLine(ev) {
 function markerPresentation(markerType) {
     switch (markerType) {
         case "TREASURE":
-            return { emoji: "💰", fill: "rgba(255,215,0,0.85)", stroke: "rgba(120,80,0,0.95)", title: "Schatz" };
+            return {
+                emoji: "💰",
+                fill: "rgba(255,215,0,0.85)",
+                stroke: "rgba(120,80,0,0.95)",
+                title: "Schatz",
+                logType: "loot",
+            };
         case "TRAP":
-            return { emoji: "⚠️", fill: "rgba(150,0,200,0.8)", stroke: "rgba(40,0,60,0.95)", title: "Falle" };
+            return {
+                emoji: "⚠️",
+                fill: "rgba(150,0,200,0.8)",
+                stroke: "rgba(40,0,60,0.95)",
+                title: "Falle",
+                logType: "trap",
+            };
         case "LEVER":
-            return { emoji: "🕹️", fill: "rgba(70,170,255,0.85)", stroke: "rgba(10,60,120,0.95)", title: "Hebel" };
+            return {
+                emoji: "🕹️",
+                fill: "rgba(70,170,255,0.85)",
+                stroke: "rgba(10,60,120,0.95)",
+                title: "Hebel",
+                logType: "lever",
+            };
         case "PLATE":
-            return { emoji: "🧱", fill: "rgba(180,180,180,0.85)", stroke: "rgba(60,60,60,0.95)", title: "Trittplatte" };
+            return {
+                emoji: "🧱",
+                fill: "rgba(180,180,180,0.85)",
+                stroke: "rgba(60,60,60,0.95)",
+                title: "Trittplatte",
+                logType: "plate",
+            };
         case "KEY":
-            return { emoji: "🗝️", fill: "rgba(255,200,0,0.75)", stroke: "rgba(120,70,0,0.95)", title: "Schlüssel" };
+            return {
+                emoji: "🗝️",
+                fill: "rgba(255,200,0,0.75)",
+                stroke: "rgba(120,70,0,0.95)",
+                title: "Schlüssel",
+                logType: "key",
+            };
         case "OBJECT":
-            return { emoji: "📦", fill: "rgba(0,0,0,0.20)", stroke: "rgba(0,0,0,0.85)", title: "Objekt" };
+            return {
+                emoji: "📦",
+                fill: "rgba(0,0,0,0.20)",
+                stroke: "rgba(0,0,0,0.85)",
+                title: "Objekt",
+                logType: "object",
+            };
         default:
-            return { emoji: "❓", fill: "rgba(0,0,0,0.15)", stroke: "rgba(0,0,0,0.6)", title: "Marker" };
+            return {
+                emoji: "❓",
+                fill: "rgba(0,0,0,0.15)",
+                stroke: "rgba(0,0,0,0.6)",
+                title: "Marker",
+                logType: "object",
+            };
     }
 }
 
@@ -204,8 +251,10 @@ export default function Board({ socket, session, onLeave }) {
     // Event log
     const [events, setEvents] = useState([]);
 
-    // Effects (persistent objects) - server stores in state.effects (object map)
-    const [effects, setEffects] = useState(() => Object.values(session.state.effects || {}));
+    // Effects
+    const [effects, setEffects] = useState(() =>
+        Object.values(session.state.effects || {})
+    );
 
     // selection
     const [selectedId, setSelectedId] = useState(null);
@@ -236,8 +285,15 @@ export default function Board({ socket, session, onLeave }) {
     const [keyLabel, setKeyLabel] = useState("Schlüssel");
     const [objectLabel, setObjectLabel] = useState("Beschriftung…");
 
-    // visibility toggle for actions
-    const [visibility, setVisibility] = useState("ALL"); // ALL | DM
+    // ✅ Sichtbarkeit pro Aktion (Option A)
+    const [treasureDmOnly, setTreasureDmOnly] = useState(false);
+    const [trapDmOnly, setTrapDmOnly] = useState(false);
+    const [leverDmOnly, setLeverDmOnly] = useState(false);
+    const [plateDmOnly, setPlateDmOnly] = useState(false);
+    const [keyDmOnly, setKeyDmOnly] = useState(false);
+    const [objectDmOnly, setObjectDmOnly] = useState(false);
+    const [wallFireDmOnly, setWallFireDmOnly] = useState(false);
+    const [wallIceDmOnly, setWallIceDmOnly] = useState(false);
 
     // DM login
     const [dmPasswordInput, setDmPasswordInput] = useState("");
@@ -255,7 +311,7 @@ export default function Board({ socket, session, onLeave }) {
     const selfId = socket.id;
     const isDm = !!state?.dmId && state.dmId === selfId;
 
-    // FULLSCREEN state fix
+    // FULLSCREEN state
     const [isFullscreen, setIsFullscreen] = useState(false);
     useEffect(() => {
         const onFs = () => setIsFullscreen(!!document.fullscreenElement);
@@ -299,7 +355,8 @@ export default function Board({ socket, session, onLeave }) {
                 const next = structuredClone(prev);
 
                 if (patch.type === "map:set") next.map = patch.map;
-                else if (patch.type === "token:upsert") next.tokens[patch.token.id] = patch.token;
+                else if (patch.type === "token:upsert")
+                    next.tokens[patch.token.id] = patch.token;
                 else if (patch.type === "token:move") {
                     const t = next.tokens[patch.id];
                     if (t) {
@@ -350,13 +407,13 @@ export default function Board({ socket, session, onLeave }) {
         };
     }, [socket]);
 
-    // Filter event log for non-DM: only ALL
+    // Filter event log for non-DM: hide DM-only events if server sends them
     const visibleEventsForLog = useMemo(() => {
         if (isDm) return events;
         return events.filter((ev) => (ev?.visibility || "ALL") !== "DM");
     }, [events, isDm]);
 
-    // Sort tokens by y so lower tokens render "in front"
+    // Sort tokens by y
     const tokensArr = useMemo(() => {
         return Object.values(state.tokens).sort((a, b) => (a.y || 0) - (b.y || 0));
     }, [state.tokens]);
@@ -367,9 +424,14 @@ export default function Board({ socket, session, onLeave }) {
     }, [showGrid, state.map.width, state.map.height, hexSize]);
 
     const setMap = () => {
-        socket.emit("map:set", { roomId, url: mapUrl, width: mapW, height: mapH }, (res) => {
-            if (res && res.ok === false) alert("Map set failed: " + (res.error || "unknown"));
-        });
+        socket.emit(
+            "map:set",
+            { roomId, url: mapUrl, width: mapW, height: mapH },
+            (res) => {
+                if (res && res.ok === false)
+                    alert("Map set failed: " + (res.error || "unknown"));
+            }
+        );
     };
 
     const handleMapUpload = async (e) => {
@@ -435,21 +497,29 @@ export default function Board({ socket, session, onLeave }) {
         if (!isMiddle && !isShiftLeft) return;
 
         setIsPanning(true);
-        panStart.current = { x: e.evt.clientX, y: e.evt.clientY, vx: view.x, vy: view.y };
+        panStart.current = {
+            x: e.evt.clientX,
+            y: e.evt.clientY,
+            vx: view.x,
+            vy: view.y,
+        };
     };
 
     const movePan = (e) => {
         if (!isPanning) return;
         const dx = e.evt.clientX - panStart.current.x;
         const dy = e.evt.clientY - panStart.current.y;
-        setView((v) => ({ ...v, x: panStart.current.vx + dx, y: panStart.current.vy + dy }));
+        setView((v) => ({
+            ...v,
+            x: panStart.current.vx + dx,
+            y: panStart.current.vy + dy,
+        }));
     };
 
     const endPan = () => setIsPanning(false);
 
     // Move token (self or DM enemy)
     const moveToken = (id, x, y) => {
-        // local update for smoothness
         setState((prev) => {
             const next = structuredClone(prev);
             const t = next.tokens[id];
@@ -491,6 +561,7 @@ export default function Board({ socket, session, onLeave }) {
     const target = targetId ? state.tokens[targetId] : null;
     const canAttack = selected && target && selectedId !== targetId;
 
+    // ✅ Attack immer ALL (Option A)
     const triggerAttack = () => {
         if (!canAttack) return;
         const text = `${selected.name} greift ${target.name} an!`;
@@ -501,20 +572,29 @@ export default function Board({ socket, session, onLeave }) {
                 attackerId: selectedId,
                 targetId: targetId,
                 text,
-                visibility: visibility === "DM" ? "DM" : "ALL",
+                visibility: "ALL",
             },
             (res) => {
-                if (!res?.ok) alert("Attack event failed: " + (res?.error || "unknown"));
+                if (!res?.ok)
+                    alert("Attack event failed: " + (res?.error || "unknown"));
             }
         );
     };
 
+    // ✅ Note immer ALL (Option A)
     const triggerNote = () => {
         socket.emit(
             "event:log",
-            { roomId, type: "note", title: "Notiz", text: String(noteText || "").slice(0, 240), visibility },
+            {
+                roomId,
+                type: "note",
+                title: "Notiz",
+                text: String(noteText || "").slice(0, 240),
+                visibility: "ALL",
+            },
             (res) => {
-                if (res && res.ok === false) alert("Note failed: " + (res.error || "unknown"));
+                if (res && res.ok === false)
+                    alert("Note failed: " + (res.error || "unknown"));
             }
         );
     };
@@ -548,7 +628,6 @@ export default function Board({ socket, session, onLeave }) {
         return clampToMap(snapped.x, snapped.y, state.map.width, state.map.height);
     }
 
-    // Enemy placement + effect placement (walls/markers)
     const onStageMouseDown = (e) => {
         startPan(e);
 
@@ -578,7 +657,8 @@ export default function Board({ socket, session, onLeave }) {
                 "token:addEnemy",
                 { roomId, name: enemyName, imgUrl: enemyImgUrl, x: pos.x, y: pos.y },
                 (res) => {
-                    if (!res?.ok) alert("Add enemy failed: " + (res?.error || "unknown"));
+                    if (!res?.ok)
+                        alert("Add enemy failed: " + (res?.error || "unknown"));
                 }
             );
             setPlacingEnemy(false);
@@ -605,30 +685,19 @@ export default function Board({ socket, session, onLeave }) {
                         },
                     },
                     (res) => {
-                        if (res && res.ok === false) alert("Effect add failed: " + (res.error || "unknown"));
+                        if (res && res.ok === false)
+                            alert("Effect add failed: " + (res.error || "unknown"));
                     }
                 );
 
-                const logType =
-                    markerType === "TREASURE"
-                        ? "loot"
-                        : markerType === "TRAP"
-                            ? "trap"
-                            : markerType === "LEVER"
-                                ? "lever"
-                                : markerType === "PLATE"
-                                    ? "plate"
-                                    : markerType === "KEY"
-                                        ? "key"
-                                        : "object";
-
+                const pres = markerPresentation(markerType);
                 socket.emit(
                     "event:log",
                     {
                         roomId,
-                        type: logType,
+                        type: pres.logType,
                         title: "Marker",
-                        text: `${markerPresentation(markerType).title} platziert: ${label}`,
+                        text: `${pres.title} platziert: ${label}`,
                         visibility: vis,
                     },
                     () => { }
@@ -673,13 +742,20 @@ export default function Board({ socket, session, onLeave }) {
                         },
                     },
                     (res) => {
-                        if (res && res.ok === false) alert("Effect add failed: " + (res.error || "unknown"));
+                        if (res && res.ok === false)
+                            alert("Effect add failed: " + (res.error || "unknown"));
                     }
                 );
 
                 socket.emit(
                     "event:log",
-                    { roomId, type: "effect", title: "Effekt", text: `${element === "FIRE" ? "Feuerwand" : "Eiswand"} gesetzt`, visibility: vis },
+                    {
+                        roomId,
+                        type: "effect",
+                        title: "Effekt",
+                        text: `${element === "FIRE" ? "Feuerwand" : "Eiswand"} gesetzt`,
+                        visibility: vis,
+                    },
                     () => { }
                 );
 
@@ -689,7 +765,6 @@ export default function Board({ socket, session, onLeave }) {
         }
     };
 
-    // Persistent attack line
     const persistentLine = useMemo(() => {
         if (!selectedId || !targetId) return null;
         const a = state.tokens[selectedId];
@@ -700,9 +775,14 @@ export default function Board({ socket, session, onLeave }) {
         return { ax: a.x, ay: a.y, bx: b.x, by: b.y, color };
     }, [state.tokens, selectedId, targetId]);
 
-    const walls = useMemo(() => effects.filter((e) => e.kind === "wall"), [effects]);
-
+    const wallsAll = useMemo(() => effects.filter((e) => e.kind === "wall"), [effects]);
     const markersAll = useMemo(() => effects.filter((e) => e.kind === "marker"), [effects]);
+
+    const walls = useMemo(() => {
+        if (isDm) return wallsAll;
+        return wallsAll.filter((w) => (w?.visibility || "ALL") !== "DM");
+    }, [wallsAll, isDm]);
+
     const markers = useMemo(() => {
         if (isDm) return markersAll;
         return markersAll.filter((m) => (m?.visibility || "ALL") !== "DM");
@@ -715,13 +795,17 @@ export default function Board({ socket, session, onLeave }) {
                 <div style={{ flex: 1, minWidth: 720 }}>
                     <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
                         <div>
-                            <strong>Raum:</strong> <span style={{ fontFamily: "monospace" }}>{roomId}</span>
-                            <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>{isDm ? "DM" : "Spieler"}</span>
+                            <strong>Raum:</strong>{" "}
+                            <span style={{ fontFamily: "monospace" }}>{roomId}</span>
+                            <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>
+                                {isDm ? "DM" : "Spieler"}
+                            </span>
                         </div>
 
                         <button onClick={onLeave}>Verlassen</button>
-
-                        <button onClick={toggleFullscreen}>{isFullscreen ? "Fullscreen verlassen" : "Fullscreen"}</button>
+                        <button onClick={toggleFullscreen}>
+                            {isFullscreen ? "Fullscreen verlassen" : "Fullscreen"}
+                        </button>
 
                         <div style={{ flex: 1 }} />
 
@@ -733,13 +817,29 @@ export default function Board({ socket, session, onLeave }) {
                                 style={{ width: 260 }}
                                 disabled={!isDm}
                             />
-                            <input value={mapW} onChange={(e) => setMapW(e.target.value)} style={{ width: 90 }} disabled={!isDm} />
-                            <input value={mapH} onChange={(e) => setMapH(e.target.value)} style={{ width: 90 }} disabled={!isDm} />
-                            <button onClick={setMap} disabled={!isDm}>Karte setzen</button>
+                            <input
+                                value={mapW}
+                                onChange={(e) => setMapW(e.target.value)}
+                                style={{ width: 90 }}
+                                disabled={!isDm}
+                            />
+                            <input
+                                value={mapH}
+                                onChange={(e) => setMapH(e.target.value)}
+                                style={{ width: 90 }}
+                                disabled={!isDm}
+                            />
+                            <button onClick={setMap} disabled={!isDm}>
+                                Karte setzen
+                            </button>
                             <input type="file" accept="image/*" onChange={handleMapUpload} disabled={!isDm} />
 
                             <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 10 }}>
-                                <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
+                                <input
+                                    type="checkbox"
+                                    checked={showGrid}
+                                    onChange={(e) => setShowGrid(e.target.checked)}
+                                />
                                 Hex-Grid
                             </label>
 
@@ -778,14 +878,18 @@ export default function Board({ socket, session, onLeave }) {
 
                                 {showGrid &&
                                     gridLines.map((pts, idx) => (
-                                        <Line key={idx} points={pts} closed={false} strokeWidth={1} stroke={"rgba(0,0,0,0.25)"} listening={false} />
+                                        <Line
+                                            key={idx}
+                                            points={pts}
+                                            closed={false}
+                                            strokeWidth={1}
+                                            stroke={"rgba(0,0,0,0.25)"}
+                                            listening={false}
+                                        />
                                     ))}
 
                                 {/* EFFECTS: walls */}
                                 {walls.map((w) => {
-                                    const vis = w?.visibility || "ALL";
-                                    if (!isDm && vis === "DM") return null;
-
                                     const element = w.element === "FIRE" ? "FIRE" : "ICE";
                                     const style = wallStyle(element);
                                     const stroke = w.color || style.stroke;
@@ -793,6 +897,7 @@ export default function Board({ socket, session, onLeave }) {
                                     const thick = w.thickness ?? Math.max(6, Math.round(hexSize * 0.22));
 
                                     const isSel = w.id === selectedEffectId;
+                                    const vis = w?.visibility || "ALL";
                                     const dmOnlyOverlay = isDm && vis === "DM";
 
                                     return (
@@ -882,7 +987,6 @@ export default function Board({ socket, session, onLeave }) {
                                     const innerR = Math.max(10, Math.round(hexSize * 0.30));
                                     const iconSize = Math.max(14, Math.round(hexSize * 0.38));
                                     const labelSize = Math.max(10, Math.round(hexSize * 0.22));
-
                                     const dmOnlyOverlay = isDm && vis === "DM";
 
                                     return (
@@ -946,7 +1050,14 @@ export default function Board({ socket, session, onLeave }) {
                                                 listening={false}
                                             />
 
-                                            <Circle x={0} y={0} radius={innerR} stroke={"rgba(0,0,0,0.15)"} strokeWidth={1} listening={false} />
+                                            <Circle
+                                                x={0}
+                                                y={0}
+                                                radius={innerR}
+                                                stroke={"rgba(0,0,0,0.15)"}
+                                                strokeWidth={1}
+                                                listening={false}
+                                            />
 
                                             <Text
                                                 text={(vis === "DM" ? "🔒 " : "") + (m.label || pres.title)}
@@ -976,7 +1087,14 @@ export default function Board({ socket, session, onLeave }) {
                                             shadowBlur={10}
                                             shadowOpacity={0.6}
                                         />
-                                        <ArrowHead ax={persistentLine.ax} ay={persistentLine.ay} bx={persistentLine.bx} by={persistentLine.by} color={persistentLine.color || "red"} hexSize={hexSize} />
+                                        <ArrowHead
+                                            ax={persistentLine.ax}
+                                            ay={persistentLine.ay}
+                                            bx={persistentLine.bx}
+                                            by={persistentLine.by}
+                                            color={persistentLine.color || "red"}
+                                            hexSize={hexSize}
+                                        />
                                     </Group>
                                 )}
 
@@ -1004,9 +1122,16 @@ export default function Board({ socket, session, onLeave }) {
                                     />
                                 ))}
 
+                                {/* placing hint */}
                                 {(placingEnemy || placeMode) && (
                                     <Group listening={false}>
-                                        <Rect x={0} y={0} width={state.map.width} height={state.map.height} fill="rgba(0,0,0,0.08)" />
+                                        <Rect
+                                            x={0}
+                                            y={0}
+                                            width={state.map.width}
+                                            height={state.map.height}
+                                            fill="rgba(0,0,0,0.08)"
+                                        />
                                         <Text
                                             text={
                                                 placingEnemy
@@ -1014,8 +1139,10 @@ export default function Board({ socket, session, onLeave }) {
                                                     : placeMode?.mode === "MARKER"
                                                         ? `Klicke: ${markerPresentation(placeMode.markerType).title} platzieren…`
                                                         : placeMode?.mode === "WALL" && placeMode.step === 1
-                                                            ? `Klicke Startpunkt: ${placeMode.element === "FIRE" ? "Feuerwand" : "Eiswand"}…`
-                                                            : `Klicke Endpunkt: ${placeMode?.element === "FIRE" ? "Feuerwand" : "Eiswand"}…`
+                                                            ? `Klicke Startpunkt: ${placeMode.element === "FIRE" ? "Feuerwand" : "Eiswand"
+                                                            }…`
+                                                            : `Klicke Endpunkt: ${placeMode?.element === "FIRE" ? "Feuerwand" : "Eiswand"
+                                                            }…`
                                             }
                                             x={20}
                                             y={20}
@@ -1023,7 +1150,13 @@ export default function Board({ socket, session, onLeave }) {
                                             fill={"black"}
                                         />
                                         {placeMode?.visibility === "DM" && (
-                                            <Text text={"🔒 Nur DM sichtbar"} x={20} y={46} fontSize={14} fill={"rgba(0,0,0,0.7)"} />
+                                            <Text
+                                                text={"🔒 nur DM sichtbar"}
+                                                x={20}
+                                                y={46}
+                                                fontSize={14}
+                                                fill={"rgba(0,0,0,0.7)"}
+                                            />
                                         )}
                                     </Group>
                                 )}
@@ -1032,8 +1165,9 @@ export default function Board({ socket, session, onLeave }) {
                     </div>
 
                     <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-                        Steuerung: Token ziehen = bewegen (dein Token; DM kann Gegner ziehen). Zoom: Mausrad. Pan: Shift+Linksklick ziehen oder
-                        Mausrad-Klick ziehen. Auswahl: 1x klick = Angreifer, 2. klick = Ziel.
+                        Steuerung: Token ziehen = bewegen (dein Token; DM kann Gegner ziehen).
+                        Zoom: Mausrad. Pan: Shift+Linksklick ziehen oder Mausrad-Klick ziehen.
+                        Auswahl: 1x klick = Angreifer, 2. klick = Ziel.
                         <br />
                         Effekte: Marker/Walls platzieren per Linksklick. Löschen: Effekt anklicken → (nur DM) löschen.
                     </div>
@@ -1066,22 +1200,7 @@ export default function Board({ socket, session, onLeave }) {
                         )}
                     </div>
 
-                    {/* Visibility toggle */}
-                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Sichtbarkeit</div>
-                        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
-                            <input
-                                type="checkbox"
-                                checked={visibility === "ALL"}
-                                onChange={(e) => setVisibility(e.target.checked ? "ALL" : "DM")}
-                            />
-                            Für alle sichtbar
-                        </label>
-                        <div style={{ fontSize: 12, opacity: 0.75, marginTop: 6 }}>
-                            Wenn deaktiviert: 🔒 nur DM (Marker/Wände & Log-Einträge werden für Spieler ausgeblendet)
-                        </div>
-                    </div>
-
+                    {/* ENEMY */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Gegner hinzufügen</div>
 
@@ -1119,6 +1238,7 @@ export default function Board({ socket, session, onLeave }) {
                         </div>
                     </div>
 
+                    {/* EVENTS / EFFECTS */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Events & Effekte</div>
 
@@ -1172,7 +1292,12 @@ export default function Board({ socket, session, onLeave }) {
                                 <>
                                     <div>
                                         <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Text</label>
-                                        <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} style={{ width: "100%" }} />
+                                        <textarea
+                                            value={noteText}
+                                            onChange={(e) => setNoteText(e.target.value)}
+                                            rows={3}
+                                            style={{ width: "100%" }}
+                                        />
                                     </div>
                                     <button
                                         onClick={() => {
@@ -1189,11 +1314,17 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "TREASURE" && (
                                 <>
                                     <LabelInput label="Label" value={treasureLabel} setValue={setTreasureLabel} disabled={!isDm} />
+                                    <DmOnlyToggle value={treasureDmOnly} setValue={setTreasureDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Marker platzieren.");
                                             setPlacingEnemy(false);
-                                            setPlaceMode({ mode: "MARKER", markerType: "TREASURE", label: treasureLabel || "Schatz", visibility });
+                                            setPlaceMode({
+                                                mode: "MARKER",
+                                                markerType: "TREASURE",
+                                                label: treasureLabel || "Schatz",
+                                                visibility: treasureDmOnly ? "DM" : "ALL",
+                                            });
                                         }}
                                         disabled={!isDm}
                                     >
@@ -1205,11 +1336,17 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "TRAP" && (
                                 <>
                                     <LabelInput label="Label" value={trapLabel} setValue={setTrapLabel} disabled={!isDm} />
+                                    <DmOnlyToggle value={trapDmOnly} setValue={setTrapDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Marker platzieren.");
                                             setPlacingEnemy(false);
-                                            setPlaceMode({ mode: "MARKER", markerType: "TRAP", label: trapLabel || "Falle", visibility });
+                                            setPlaceMode({
+                                                mode: "MARKER",
+                                                markerType: "TRAP",
+                                                label: trapLabel || "Falle",
+                                                visibility: trapDmOnly ? "DM" : "ALL",
+                                            });
                                         }}
                                         disabled={!isDm}
                                     >
@@ -1221,11 +1358,17 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "LEVER" && (
                                 <>
                                     <LabelInput label="Label" value={leverLabel} setValue={setLeverLabel} disabled={!isDm} />
+                                    <DmOnlyToggle value={leverDmOnly} setValue={setLeverDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Marker platzieren.");
                                             setPlacingEnemy(false);
-                                            setPlaceMode({ mode: "MARKER", markerType: "LEVER", label: leverLabel || "Hebel", visibility });
+                                            setPlaceMode({
+                                                mode: "MARKER",
+                                                markerType: "LEVER",
+                                                label: leverLabel || "Hebel",
+                                                visibility: leverDmOnly ? "DM" : "ALL",
+                                            });
                                         }}
                                         disabled={!isDm}
                                     >
@@ -1237,11 +1380,17 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "PLATE" && (
                                 <>
                                     <LabelInput label="Label" value={plateLabel} setValue={setPlateLabel} disabled={!isDm} />
+                                    <DmOnlyToggle value={plateDmOnly} setValue={setPlateDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Marker platzieren.");
                                             setPlacingEnemy(false);
-                                            setPlaceMode({ mode: "MARKER", markerType: "PLATE", label: plateLabel || "Trittplatte", visibility });
+                                            setPlaceMode({
+                                                mode: "MARKER",
+                                                markerType: "PLATE",
+                                                label: plateLabel || "Trittplatte",
+                                                visibility: plateDmOnly ? "DM" : "ALL",
+                                            });
                                         }}
                                         disabled={!isDm}
                                     >
@@ -1253,11 +1402,17 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "KEY" && (
                                 <>
                                     <LabelInput label="Label" value={keyLabel} setValue={setKeyLabel} disabled={!isDm} />
+                                    <DmOnlyToggle value={keyDmOnly} setValue={setKeyDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Marker platzieren.");
                                             setPlacingEnemy(false);
-                                            setPlaceMode({ mode: "MARKER", markerType: "KEY", label: keyLabel || "Schlüssel", visibility });
+                                            setPlaceMode({
+                                                mode: "MARKER",
+                                                markerType: "KEY",
+                                                label: keyLabel || "Schlüssel",
+                                                visibility: keyDmOnly ? "DM" : "ALL",
+                                            });
                                         }}
                                         disabled={!isDm}
                                     >
@@ -1269,11 +1424,17 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "OBJECT" && (
                                 <>
                                     <LabelInput label="Beschriftung" value={objectLabel} setValue={setObjectLabel} disabled={!isDm} />
+                                    <DmOnlyToggle value={objectDmOnly} setValue={setObjectDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Marker platzieren.");
                                             setPlacingEnemy(false);
-                                            setPlaceMode({ mode: "MARKER", markerType: "OBJECT", label: objectLabel || "Objekt", visibility });
+                                            setPlaceMode({
+                                                mode: "MARKER",
+                                                markerType: "OBJECT",
+                                                label: objectLabel || "Objekt",
+                                                visibility: objectDmOnly ? "DM" : "ALL",
+                                            });
                                         }}
                                         disabled={!isDm}
                                     >
@@ -1282,24 +1443,48 @@ export default function Board({ socket, session, onLeave }) {
                                 </>
                             )}
 
-                            {(eventKind === "WALL_FIRE" || eventKind === "WALL_ICE") && (
+                            {eventKind === "WALL_FIRE" && (
                                 <>
                                     <div style={{ fontSize: 12, opacity: 0.8 }}>2 Klicks: Startpunkt → Endpunkt</div>
+                                    <DmOnlyToggle value={wallFireDmOnly} setValue={setWallFireDmOnly} />
                                     <button
                                         onClick={() => {
                                             if (!isDm) return alert("Nur der DM darf Wände setzen.");
                                             setPlacingEnemy(false);
                                             setPlaceMode({
                                                 mode: "WALL",
-                                                element: eventKind === "WALL_FIRE" ? "FIRE" : "ICE",
-                                                visibility,
+                                                element: "FIRE",
+                                                visibility: wallFireDmOnly ? "DM" : "ALL",
                                                 step: 1,
                                                 from: null,
                                             });
                                         }}
                                         disabled={!isDm}
                                     >
-                                        {eventKind === "WALL_FIRE" ? "Feuerwand setzen" : "Eiswand setzen"} (2 Klicks)
+                                        Feuerwand setzen (2 Klicks)
+                                    </button>
+                                </>
+                            )}
+
+                            {eventKind === "WALL_ICE" && (
+                                <>
+                                    <div style={{ fontSize: 12, opacity: 0.8 }}>2 Klicks: Startpunkt → Endpunkt</div>
+                                    <DmOnlyToggle value={wallIceDmOnly} setValue={setWallIceDmOnly} />
+                                    <button
+                                        onClick={() => {
+                                            if (!isDm) return alert("Nur der DM darf Wände setzen.");
+                                            setPlacingEnemy(false);
+                                            setPlaceMode({
+                                                mode: "WALL",
+                                                element: "ICE",
+                                                visibility: wallIceDmOnly ? "DM" : "ALL",
+                                                step: 1,
+                                                from: null,
+                                            });
+                                        }}
+                                        disabled={!isDm}
+                                    >
+                                        Eiswand setzen (2 Klicks)
                                     </button>
                                 </>
                             )}
@@ -1317,6 +1502,57 @@ export default function Board({ socket, session, onLeave }) {
                         </div>
                     </div>
 
+                    {/* SELECTED EFFECT */}
+                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Ausgewählter Effekt</div>
+
+                        {!selectedEffect ? (
+                            <div style={{ fontSize: 13, opacity: 0.7 }}>
+                                Kein Effekt ausgewählt. (Klick auf Wand/Marker)
+                            </div>
+                        ) : (
+                            <div style={{ display: "grid", gap: 8 }}>
+                                <div style={{ fontSize: 13 }}>
+                                    <div>
+                                        <strong>Typ:</strong> {selectedEffect.kind}
+                                    </div>
+                                    {selectedEffect.kind === "wall" && (
+                                        <div>
+                                            <strong>Element:</strong>{" "}
+                                            {selectedEffect.element ||
+                                                (String(selectedEffect.label || "").includes("Feuer") ? "FIRE" : "ICE")}
+                                        </div>
+                                    )}
+                                    {selectedEffect.kind === "marker" && (
+                                        <div>
+                                            <strong>Marker:</strong> {selectedEffect.markerType} ({selectedEffect.label})
+                                        </div>
+                                    )}
+                                    <div>
+                                        <strong>Sichtbar:</strong>{" "}
+                                        {(selectedEffect.visibility || "ALL") === "DM" ? "🔒 nur DM" : "für alle"}
+                                    </div>
+                                </div>
+
+                                {isDm ? (
+                                    <button
+                                        onClick={() => handleDeleteEffect(selectedEffect.id)}
+                                        style={{ background: "#ffe5e5" }}
+                                    >
+                                        Effekt löschen (DM)
+                                    </button>
+                                ) : (
+                                    <div style={{ fontSize: 12, opacity: 0.7 }}>
+                                        Nur der DM kann Effekte löschen.
+                                    </div>
+                                )}
+
+                                <button onClick={() => setSelectedEffectId(null)}>Auswahl aufheben</button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* EVENT LOG */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Event Log</div>
                         <div style={{ maxHeight: 320, overflow: "auto", fontSize: 13, display: "grid", gap: 6 }}>
@@ -1349,8 +1585,22 @@ function LabelInput({ label, value, setValue, disabled }) {
     return (
         <div>
             <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>{label}</label>
-            <input value={value} onChange={(e) => setValue(e.target.value)} style={{ width: "100%" }} disabled={disabled} />
+            <input
+                value={value}
+                onChange={(e) => setValue(e.target.value)}
+                style={{ width: "100%" }}
+                disabled={disabled}
+            />
         </div>
+    );
+}
+
+function DmOnlyToggle({ value, setValue }) {
+    return (
+        <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}>
+            <input type="checkbox" checked={!!value} onChange={(e) => setValue(e.target.checked)} />
+            🔒 nur DM sichtbar
+        </label>
     );
 }
 
@@ -1389,14 +1639,28 @@ function ArrowHead({ ax, ay, bx, by, color, hexSize }) {
     );
 }
 
-function Token({ token, isSelf, isDm, onMove, hexSize, mapW, mapH, onClick, selected, targeted }) {
+function Token({
+    token,
+    isSelf,
+    isDm,
+    onMove,
+    hexSize,
+    mapW,
+    mapH,
+    onClick,
+    selected,
+    targeted,
+}) {
     const avatar = useHtmlImage(token.imgUrl);
     const isEnemy = token.kind === "enemy";
     const ringColor = getTokenRingColor(token);
 
     // Token fills hex
     const tokenHexSize = Math.max(14, hexSize * 0.98);
-    const hexPts = useMemo(() => hexClipPolygonPoints(tokenHexSize), [tokenHexSize]);
+    const hexPts = useMemo(
+        () => hexClipPolygonPoints(tokenHexSize),
+        [tokenHexSize]
+    );
 
     const hexW = Math.sqrt(3) * tokenHexSize;
     const hexH = 2 * tokenHexSize;
@@ -1444,7 +1708,14 @@ function Token({ token, isSelf, isDm, onMove, hexSize, mapW, mapH, onClick, sele
             />
 
             {avatar ? (
-                <KonvaImage image={avatar} x={-hexW / 2} y={-hexH / 2} width={hexW} height={hexH} listening={false} />
+                <KonvaImage
+                    image={avatar}
+                    x={-hexW / 2}
+                    y={-hexH / 2}
+                    width={hexW}
+                    height={hexH}
+                    listening={false}
+                />
             ) : (
                 <Rect
                     x={-hexW / 2}
