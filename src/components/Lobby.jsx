@@ -29,7 +29,6 @@ async function copyToClipboard(text) {
         await navigator.clipboard.writeText(text);
         return true;
     } catch {
-        // fallback
         try {
             const ta = document.createElement("textarea");
             ta.value = text;
@@ -71,6 +70,8 @@ export default function Lobby({ socket, onJoined, prefillRoomId = "" }) {
 
     // Live updates from server when someone joins/leaves (best-effort)
     useEffect(() => {
+        if (!socket) return;
+
         const onUpdate = (payload) => {
             const colors = Array.isArray(payload?.colors) ? payload.colors : [];
             setReservedColors(colors);
@@ -88,6 +89,8 @@ export default function Lobby({ socket, onJoined, prefillRoomId = "" }) {
 
     // Ask server which colors are currently used in this room (best-effort)
     useEffect(() => {
+        if (!socket) return;
+
         if (!ridNormalized) {
             setReservedColors([]);
             return;
@@ -117,6 +120,7 @@ export default function Lobby({ socket, onJoined, prefillRoomId = "" }) {
     }, [socket, ridNormalized, pickedColor]);
 
     const createRoom = () => {
+        if (!socket) return;
         setStatus("Creating room...");
         setShareUrl("");
 
@@ -137,11 +141,13 @@ export default function Lobby({ socket, onJoined, prefillRoomId = "" }) {
             // best-effort colors (server might not support)
             socket.emit("room:colors", { roomId: newRid }, (r2) => {
                 if (r2?.ok && Array.isArray(r2.colors)) setReservedColors(r2.colors);
+                else setReservedColors([]);
             });
         });
     };
 
     const joinRoom = () => {
+        if (!socket) return;
         const rid = ridNormalized;
         if (!rid) return setStatus("Enter a room code.");
         setStatus("Joining...");
@@ -154,7 +160,16 @@ export default function Lobby({ socket, onJoined, prefillRoomId = "" }) {
             }
 
             setStatus("Joined ✅");
-            onJoined({ roomId: rid, selfId: socket.id, state: res.state });
+
+            // ✅ WICHTIG: Board erwartet diese Felder (name/imgUrl/color)
+            onJoined({
+                roomId: rid,
+                selfId: socket.id,
+                name,
+                imgUrl,
+                color: pickedColor,
+                state: res.state,
+            });
         });
     };
 
@@ -184,11 +199,7 @@ export default function Lobby({ socket, onJoined, prefillRoomId = "" }) {
 
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                     <label>Raumcode</label>
-                    <input
-                        value={roomId}
-                        onChange={(e) => setRoomId(e.target.value)}
-                        placeholder="z.B. ABCD12"
-                    />
+                    <input value={roomId} onChange={(e) => setRoomId(e.target.value)} placeholder="z.B. ABCD12" />
                     <button onClick={joinRoom}>Beitreten</button>
                 </div>
             </div>

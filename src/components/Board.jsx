@@ -33,13 +33,11 @@ function hexToPixel(q, r, size) {
     const y = size * (3 / 2) * r;
     return { x, y };
 }
-
 function pixelToHex(x, y, size) {
     const q = (Math.sqrt(3) / 3 * x - 1 / 3 * y) / size;
     const r = (2 / 3 * y) / size;
     return { q, r };
 }
-
 function hexRound(q, r) {
     let x = q;
     let z = r;
@@ -59,13 +57,11 @@ function hexRound(q, r) {
 
     return { q: rx, r: rz };
 }
-
 function snapPixelToHex(x, y, size) {
     const frac = pixelToHex(x, y, size);
     const rounded = hexRound(frac.q, frac.r);
     return hexToPixel(rounded.q, rounded.r, size);
 }
-
 function hexCornerPoints(cx, cy, size) {
     const pts = [];
     for (let i = 0; i < 6; i++) {
@@ -76,7 +72,6 @@ function hexCornerPoints(cx, cy, size) {
     pts.push(pts[0], pts[1]);
     return pts;
 }
-
 function hexClipPolygonPoints(size) {
     const pts = [];
     for (let i = 0; i < 6; i++) {
@@ -85,7 +80,6 @@ function hexClipPolygonPoints(size) {
     }
     return pts;
 }
-
 function buildHexGridLines(mapW, mapH, size) {
     const lines = [];
     const rMin = -3;
@@ -102,7 +96,6 @@ function buildHexGridLines(mapW, mapH, size) {
     }
     return lines;
 }
-
 function clampToMap(x, y, mapW, mapH) {
     return {
         x: Math.max(0, Math.min(x, mapW)),
@@ -125,7 +118,6 @@ const PLAYER_COLOR_PALETTE = [
     "#5E5CE6",
     "#A2845E",
 ];
-
 function hashToIndex(str, mod) {
     let h = 0;
     for (let i = 0; i < str.length; i++) {
@@ -133,11 +125,14 @@ function hashToIndex(str, mod) {
     }
     return h % mod;
 }
-
 function getTokenRingColor(token) {
     if (token?.kind === "enemy") return "rgba(160,0,0,0.85)";
-    if (typeof token?.color === "string" && token.color.trim()) return token.color.trim();
-    const idx = hashToIndex(String(token?.id || ""), PLAYER_COLOR_PALETTE.length);
+    if (typeof token?.color === "string" && token.color.trim())
+        return token.color.trim();
+    const idx = hashToIndex(
+        String(token?.id || ""),
+        PLAYER_COLOR_PALETTE.length
+    );
     return PLAYER_COLOR_PALETTE[idx];
 }
 
@@ -156,20 +151,6 @@ function wallStyle(element) {
     };
 }
 
-function formatEventLine(ev) {
-    if (!ev) return "";
-    if (ev.type === "attack") return ev.text || `${ev.attackerName ?? "?"} → ${ev.targetName ?? "?"}`;
-    if (ev.type === "note") return ev.text || ev.title || "Notiz";
-    if (ev.type === "loot") return ev.text || ev.title || "Schatz";
-    if (ev.type === "trap") return ev.text || ev.title || "Falle";
-    if (ev.type === "effect") return ev.text || ev.title || "Effekt";
-    if (ev.type === "lever") return ev.text || ev.title || "Hebel";
-    if (ev.type === "plate") return ev.text || ev.title || "Trittplatte";
-    if (ev.type === "key") return ev.text || ev.title || "Schlüssel";
-    if (ev.type === "object") return ev.text || ev.title || "Objekt";
-    return ev.text || ev.title || ev.type || "Event";
-}
-
 function markerPresentation(markerType) {
     switch (markerType) {
         case "TREASURE":
@@ -178,7 +159,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(255,215,0,0.85)",
                 stroke: "rgba(120,80,0,0.95)",
                 title: "Schatz",
-                logType: "loot",
             };
         case "TRAP":
             return {
@@ -186,7 +166,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(150,0,200,0.8)",
                 stroke: "rgba(40,0,60,0.95)",
                 title: "Falle",
-                logType: "trap",
             };
         case "LEVER":
             return {
@@ -194,7 +173,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(70,170,255,0.85)",
                 stroke: "rgba(10,60,120,0.95)",
                 title: "Hebel",
-                logType: "lever",
             };
         case "PLATE":
             return {
@@ -202,7 +180,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(180,180,180,0.85)",
                 stroke: "rgba(60,60,60,0.95)",
                 title: "Trittplatte",
-                logType: "plate",
             };
         case "KEY":
             return {
@@ -210,7 +187,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(255,200,0,0.75)",
                 stroke: "rgba(120,70,0,0.95)",
                 title: "Schlüssel",
-                logType: "key",
             };
         case "OBJECT":
             return {
@@ -218,7 +194,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(0,0,0,0.20)",
                 stroke: "rgba(0,0,0,0.85)",
                 title: "Objekt",
-                logType: "object",
             };
         default:
             return {
@@ -226,7 +201,6 @@ function markerPresentation(markerType) {
                 fill: "rgba(0,0,0,0.15)",
                 stroke: "rgba(0,0,0,0.6)",
                 title: "Marker",
-                logType: "object",
             };
     }
 }
@@ -237,31 +211,73 @@ function toIntSafe(v, fallback) {
     return Math.trunc(n);
 }
 
+/**
+ * state.attacks kann 2 Formen haben:
+ *  A) alt/vereinfach: { [attackerId]: targetId }
+ *  B) server (neu):  { [attackerId]: { attackerId, targetId, at } }
+ * Wir normalisieren beim Lesen.
+ */
+function getTargetIdFromAttackValue(v) {
+    if (!v) return null;
+    if (typeof v === "string") return v;
+    if (typeof v === "object" && v.targetId) return String(v.targetId);
+    return null;
+}
+
 export default function Board({ socket, session, onLeave }) {
     const { roomId } = session;
 
-    const [state, setState] = useState(session.state);
-    const [mapUrl, setMapUrl] = useState(session.state.map.url);
-    const [mapW, setMapW] = useState(session.state.map.width);
-    const [mapH, setMapH] = useState(session.state.map.height);
+    const initialMap =
+        session?.state?.map || {
+            url: "https://upload.wikimedia.org/wikipedia/commons/5/5a/Parchment.00.jpg",
+            width: 2000,
+            height: 1400,
+        };
+
+    const [state, setState] = useState(() => {
+        const s = session?.state || {};
+        return {
+            map: s.map || initialMap,
+            tokens: s.tokens || {},
+            effects: s.effects || {},
+            dmId: s.dmId || null,
+            attacks: s.attacks || {},
+        };
+    });
+
+    const [mapUrl, setMapUrl] = useState(initialMap.url);
+    const [mapW, setMapW] = useState(initialMap.width);
+    const [mapH, setMapH] = useState(initialMap.height);
 
     // Hex grid settings
     const [showGrid, setShowGrid] = useState(true);
     const [hexSize, setHexSize] = useState(45);
 
-    // Event log
-    const [events, setEvents] = useState([]);
-
-    // Effects
-    const [effects, setEffects] = useState(() => Object.values(session.state.effects || {}));
+    // Effects (UI list)
+    const [effects, setEffects] = useState(() =>
+        Object.values(session?.state?.effects || {})
+    );
 
     // selection (frei – NICHT der fixierte Angriff)
     const [selectedId, setSelectedId] = useState(null);
     const [targetId, setTargetId] = useState(null);
 
-    // Angriff Lock (fixiert)
+    // keep latest selection for patch-cleanup without re-registering socket listener
+    const selectedIdRef = useRef(null);
+    const targetIdRef = useRef(null);
+    useEffect(() => {
+        selectedIdRef.current = selectedId;
+    }, [selectedId]);
+    useEffect(() => {
+        targetIdRef.current = targetId;
+    }, [targetId]);
+
+    // Angriff Lock (Auswahl)
     const [attackLock, setAttackLock] = useState(false);
-    const [attackPick, setAttackPick] = useState({ attackerId: null, targetId: null });
+    const [attackPick, setAttackPick] = useState({
+        attackerId: null,
+        targetId: null,
+    });
 
     // Enemy creation UI
     const [enemyName, setEnemyName] = useState("Assassine");
@@ -278,9 +294,8 @@ export default function Board({ socket, session, onLeave }) {
     // { mode:"WALL", element, visibility, step, from }
     const [placeMode, setPlaceMode] = useState(null);
 
-    // event/effect UI inputs
+    // event/effect UI inputs (Marker/Walls)
     const [eventKind, setEventKind] = useState("ATTACK");
-    const [noteText, setNoteText] = useState("Eine Notiz…");
 
     const [treasureLabel, setTreasureLabel] = useState("Truhe");
     const [trapLabel, setTrapLabel] = useState("Falle");
@@ -289,7 +304,7 @@ export default function Board({ socket, session, onLeave }) {
     const [keyLabel, setKeyLabel] = useState("Schlüssel");
     const [objectLabel, setObjectLabel] = useState("Beschriftung…");
 
-    // Sichtbarkeit pro Aktion
+    // Sichtbarkeit pro Aktion (Effekte/Marker)
     const [treasureDmOnly, setTreasureDmOnly] = useState(false);
     const [trapDmOnly, setTrapDmOnly] = useState(false);
     const [leverDmOnly, setLeverDmOnly] = useState(false);
@@ -312,8 +327,8 @@ export default function Board({ socket, session, onLeave }) {
 
     const bgImg = useHtmlImage(state.map.url);
 
-    const selfId = socket.id;
-    const isDm = !!state?.dmId && state.dmId === selfId;
+    const selfId = socket?.id;
+    const isDm = !!state?.dmId && !!selfId && state.dmId === selfId;
 
     // FULLSCREEN state
     const [isFullscreen, setIsFullscreen] = useState(false);
@@ -350,27 +365,71 @@ export default function Board({ socket, session, onLeave }) {
         });
     };
 
+    // Socket patches (register once)
     useEffect(() => {
+        if (!socket) return;
+
         const onPatch = (patch) => {
             setState((prev) => {
                 const next = structuredClone(prev);
 
                 if (patch.type === "map:set") next.map = patch.map;
-                else if (patch.type === "token:upsert") next.tokens[patch.token.id] = patch.token;
-                else if (patch.type === "token:move") {
-                    const t = next.tokens[patch.id];
+
+                else if (patch.type === "token:upsert") {
+                    next.tokens = next.tokens || {};
+                    next.tokens[patch.token.id] = patch.token;
+                } else if (patch.type === "token:move") {
+                    const t = next.tokens?.[patch.id];
                     if (t) {
                         t.x = patch.x;
                         t.y = patch.y;
                     }
-                } else if (patch.type === "token:hp") {
-                    const t = next.tokens?.[patch.id];
-                    if (t) t.hp = patch.hp;
                 } else if (patch.type === "token:remove") {
-                    delete next.tokens[patch.id];
+                    const removedId = patch.id;
+                    if (next.tokens?.[removedId]) delete next.tokens[removedId];
+
+                    // UI cleanup (use refs -> no dependency rebind)
+                    if (selectedIdRef.current === removedId) setSelectedId(null);
+                    if (targetIdRef.current === removedId) setTargetId(null);
+                    setAttackPick((cur) => {
+                        if (cur.attackerId === removedId || cur.targetId === removedId) {
+                            return { attackerId: null, targetId: null };
+                        }
+                        return cur;
+                    });
+
+                    // attacks cleanup (client-side robust)
+                    next.attacks = next.attacks || {};
+                    if (next.attacks[removedId]) delete next.attacks[removedId];
+
+                    // remove any attacks pointing to removedId
+                    for (const [aId, aVal] of Object.entries(next.attacks)) {
+                        const tgt = getTargetIdFromAttackValue(aVal);
+                        if (tgt === removedId) delete next.attacks[aId];
+                    }
                 } else if (patch.type === "room:dm") {
                     next.dmId = patch.dmId;
-                } else if (patch.type === "effect:upsert") {
+                }
+
+                // persistent attacks
+                else if (patch.type === "attack:set") {
+                    next.attacks = next.attacks || {};
+                    if (patch.attack?.attackerId && patch.attack?.targetId) {
+                        // store as object-compatible (keep server shape)
+                        next.attacks[String(patch.attack.attackerId)] = {
+                            attackerId: String(patch.attack.attackerId),
+                            targetId: String(patch.attack.targetId),
+                            at: patch.attack.at || Date.now(),
+                        };
+                    }
+                } else if (patch.type === "attack:clear") {
+                    next.attacks = next.attacks || {};
+                    const attackerId = String(patch.attackerId || "");
+                    if (attackerId && next.attacks[attackerId]) delete next.attacks[attackerId];
+                }
+
+                // effects
+                else if (patch.type === "effect:upsert") {
                     next.effects = next.effects || {};
                     next.effects[patch.effect.id] = patch.effect;
 
@@ -394,65 +453,21 @@ export default function Board({ socket, session, onLeave }) {
             });
         };
 
-        const onEvent = (ev) => {
-            setEvents((prev) => {
-                const next = [...prev, ev];
-                return next.slice(-120);
-            });
-        };
-
         socket.on("state:patch", onPatch);
-        socket.on("event:new", onEvent);
-
-        return () => {
-            socket.off("state:patch", onPatch);
-            socket.off("event:new", onEvent);
-        };
+        return () => socket.off("state:patch", onPatch);
     }, [socket]);
-
-    // History Sync: beim Join die letzten Events holen (Server muss event:history unterstützen)
-    useEffect(() => {
-        if (!socket || !roomId) return;
-
-        socket.emit("event:history", { roomId, limit: 120 }, (res) => {
-            if (!res?.ok) return; // wenn Server es noch nicht kann: kein Crash
-            const arr = Array.isArray(res.events) ? res.events : [];
-            arr.sort((a, b) => (a?.at || 0) - (b?.at || 0));
-            setEvents(arr.slice(-120));
-        });
-    }, [socket, roomId]);
-
-    // Event log (für alle sichtbar; DM-only wird beim Client trotzdem ausgefiltert)
-    const visibleEventsForLog = useMemo(() => {
-        if (isDm) return events;
-        return events.filter((ev) => (ev?.visibility || "ALL") !== "DM");
-    }, [events, isDm]);
-
-    const attackEvents = useMemo(() => {
-        // für alle sichtbar (du wolltest nachvollziehbar)
-        return visibleEventsForLog.filter((e) => e?.type === "attack").slice(-40);
-    }, [visibleEventsForLog]);
-
-    // Letzter Angriff aus dem Log (history-synced)
-    const lastAttackEvent = useMemo(() => {
-        const arr = visibleEventsForLog.filter((e) => e?.type === "attack");
-        return arr.length ? arr[arr.length - 1] : null;
-    }, [visibleEventsForLog]);
-
-    // Pfeil aus letztem Attack-Event (global / history-synced)
-    const lastAttackLine = useMemo(() => {
-        if (!lastAttackEvent?.attackerId || !lastAttackEvent?.targetId) return null;
-        const a = state.tokens[lastAttackEvent.attackerId];
-        const b = state.tokens[lastAttackEvent.targetId];
-        if (!a || !b) return null;
-
-        const color = getTokenRingColor(a);
-        return { ax: a.x, ay: a.y, bx: b.x, by: b.y, color };
-    }, [state.tokens, lastAttackEvent]);
 
     // Sort tokens by y
     const tokensArr = useMemo(() => {
-        return Object.values(state.tokens).sort((a, b) => (a.y || 0) - (b.y || 0));
+        return Object.values(state.tokens || {}).sort((a, b) => (a.y || 0) - (b.y || 0));
+    }, [state.tokens]);
+
+    const enemiesArr = useMemo(() => {
+        return Object.values(state.tokens || {})
+            .filter((t) => t?.kind === "enemy")
+            .sort((a, b) =>
+                String(a.name || "").localeCompare(String(b.name || ""))
+            );
     }, [state.tokens]);
 
     const gridLines = useMemo(() => {
@@ -554,7 +569,7 @@ export default function Board({ socket, session, onLeave }) {
     const moveToken = (id, x, y) => {
         setState((prev) => {
             const next = structuredClone(prev);
-            const t = next.tokens[id];
+            const t = next.tokens?.[id];
             if (t) {
                 t.x = x;
                 t.y = y;
@@ -573,14 +588,19 @@ export default function Board({ socket, session, onLeave }) {
         // optimistic
         setState((prev) => {
             const next = structuredClone(prev);
-            if (next.tokens?.[tokenId]) {
-                next.tokens[tokenId].hp = hp;
-            }
+            if (next.tokens?.[tokenId]) next.tokens[tokenId].hp = hp;
             return next;
         });
 
-        // server sync (needs server support)
         socket.emit("token:setHp", { roomId, id: tokenId, hp }, () => { });
+    };
+
+    const removeEnemy = (enemyId) => {
+        if (!isDm) return;
+        socket.emit("token:removeEnemy", { roomId, id: enemyId }, (res) => {
+            if (res && res.ok === false)
+                alert("Gegner entfernen fehlgeschlagen: " + (res.error || "unknown"));
+        });
     };
 
     // stage size
@@ -603,48 +623,39 @@ export default function Board({ socket, session, onLeave }) {
         };
     }, []);
 
-    // Für UI (Angriff)
-    const uiSelected = selectedId ? state.tokens[selectedId] : null;
-    const uiTarget = targetId ? state.tokens[targetId] : null;
+    const lockedAttacker = attackPick.attackerId
+        ? state.tokens?.[attackPick.attackerId]
+        : null;
+    const lockedTarget = attackPick.targetId
+        ? state.tokens?.[attackPick.targetId]
+        : null;
 
-    const lockedAttacker = attackPick.attackerId ? state.tokens[attackPick.attackerId] : null;
-    const lockedTarget = attackPick.targetId ? state.tokens[attackPick.targetId] : null;
+    const canSetAttack =
+        lockedAttacker && lockedTarget && attackPick.attackerId !== attackPick.targetId;
 
-    const canAttack = lockedAttacker && lockedTarget && attackPick.attackerId !== attackPick.targetId;
-
-    const triggerAttack = () => {
-        if (!canAttack) return;
-        const text = `${lockedAttacker.name} greift ${lockedTarget.name} an!`;
+    const setAttack = () => {
+        if (!canSetAttack) return;
 
         socket.emit(
-            "event:attack",
-            {
-                roomId,
-                attackerId: attackPick.attackerId,
-                targetId: attackPick.targetId,
-                text,
-                visibility: "ALL",
-            },
+            "attack:set",
+            { roomId, attackerId: attackPick.attackerId, targetId: attackPick.targetId },
             (res) => {
-                if (!res?.ok) alert("Attack event failed: " + (res?.error || "unknown"));
+                if (res && res.ok === false)
+                    alert("Angriff setzen fehlgeschlagen: " + (res.error || "unknown"));
             }
         );
+
+        // Optional: nach Set direkt Auswahl resetten (damit sofort neu wählbar)
+        setAttackPick({ attackerId: null, targetId: null });
+        setAttackLock(false);
     };
 
-    const triggerNote = () => {
-        socket.emit(
-            "event:log",
-            {
-                roomId,
-                type: "note",
-                title: "Notiz",
-                text: String(noteText || "").slice(0, 240),
-                visibility: "ALL",
-            },
-            (res) => {
-                if (res && res.ok === false) alert("Note failed: " + (res.error || "unknown"));
-            }
-        );
+    const clearAttackFor = (attackerId) => {
+        if (!attackerId) return;
+        socket.emit("attack:clear", { roomId, attackerId }, (res) => {
+            if (res && res.ok === false)
+                alert("Angriff löschen fehlgeschlagen: " + (res.error || "unknown"));
+        });
     };
 
     const handleDeleteEffect = (id) => {
@@ -652,7 +663,8 @@ export default function Board({ socket, session, onLeave }) {
         if (!isDm) return;
 
         socket.emit("effect:remove", { roomId, id }, (res) => {
-            if (res && res.ok === false) alert("Löschen fehlgeschlagen: " + (res.error || "unknown"));
+            if (res && res.ok === false)
+                alert("Löschen fehlgeschlagen: " + (res.error || "unknown"));
         });
 
         setEffects((prev) => prev.filter((x) => x.id !== id));
@@ -719,18 +731,19 @@ export default function Board({ socket, session, onLeave }) {
                     "effect:add",
                     {
                         roomId,
-                        effect: { kind: "marker", markerType, label, visibility: vis, x: pos.x, y: pos.y },
+                        effect: {
+                            kind: "marker",
+                            markerType,
+                            label,
+                            visibility: vis,
+                            x: pos.x,
+                            y: pos.y,
+                        },
                     },
                     (res) => {
-                        if (res && res.ok === false) alert("Effect add failed: " + (res.error || "unknown"));
+                        if (res && res.ok === false)
+                            alert("Effect add failed: " + (res.error || "unknown"));
                     }
-                );
-
-                const pres = markerPresentation(markerType);
-                socket.emit(
-                    "event:log",
-                    { roomId, type: pres.logType, title: "Marker", text: `${pres.title} platziert: ${label}`, visibility: vis },
-                    () => { }
                 );
 
                 setPlaceMode(null);
@@ -772,14 +785,9 @@ export default function Board({ socket, session, onLeave }) {
                         },
                     },
                     (res) => {
-                        if (res && res.ok === false) alert("Effect add failed: " + (res.error || "unknown"));
+                        if (res && res.ok === false)
+                            alert("Effect add failed: " + (res.error || "unknown"));
                     }
-                );
-
-                socket.emit(
-                    "event:log",
-                    { roomId, type: "effect", title: "Effekt", text: `${element === "FIRE" ? "Feuerwand" : "Eiswand"} gesetzt`, visibility: vis },
-                    () => { }
                 );
 
                 setPlaceMode(null);
@@ -788,16 +796,42 @@ export default function Board({ socket, session, onLeave }) {
         }
     };
 
-    // Preview-Pfeil: aus attackPick (fixiert) – nur zur Auswahl/Preview
+    // Preview-Pfeil (gestrichelt) nur während Lock-Auswahl
     const previewLine = useMemo(() => {
         if (!attackPick.attackerId || !attackPick.targetId) return null;
-        const a = state.tokens[attackPick.attackerId];
-        const b = state.tokens[attackPick.targetId];
+        const a = state.tokens?.[attackPick.attackerId];
+        const b = state.tokens?.[attackPick.targetId];
         if (!a || !b) return null;
 
         const color = getTokenRingColor(a);
         return { ax: a.x, ay: a.y, bx: b.x, by: b.y, color };
     }, [state.tokens, attackPick.attackerId, attackPick.targetId]);
+
+    // Persistent attack lines (solid) – aus state.attacks (string oder object)
+    const persistentAttackLines = useMemo(() => {
+        const attacks = state.attacks || {};
+        const lines = [];
+        for (const [attackerIdRaw, attackVal] of Object.entries(attacks)) {
+            const attackerId = String(attackerIdRaw);
+            const targetId = getTargetIdFromAttackValue(attackVal);
+            if (!targetId) continue;
+
+            const a = state.tokens?.[attackerId];
+            const b = state.tokens?.[String(targetId)];
+            if (!a || !b) continue;
+
+            lines.push({
+                attackerId,
+                targetId: String(targetId),
+                ax: a.x,
+                ay: a.y,
+                bx: b.x,
+                by: b.y,
+                color: getTokenRingColor(a),
+            });
+        }
+        return lines;
+    }, [state.attacks, state.tokens]);
 
     const wallsAll = useMemo(() => effects.filter((e) => e.kind === "wall"), [effects]);
     const markersAll = useMemo(() => effects.filter((e) => e.kind === "marker"), [effects]);
@@ -813,22 +847,22 @@ export default function Board({ socket, session, onLeave }) {
     }, [markersAll, isDm]);
 
     // Token click behaviour:
-    // - Wenn Angriff Lock aktiv: Klicks wählen Angreifer/Ziel in attackPick und ändern NICHT den Pfeil später
+    // - Wenn Angriff Lock aktiv: Klicks wählen Angreifer/Ziel
     // - Wenn Lock aus: normal (selectedId/targetId) zum „rumklicken“
     const onTokenClick = (t) => {
         if (attackLock) {
             setAttackPick((cur) => {
-                // 1) wenn kein Angreifer -> set
                 if (!cur.attackerId) return { attackerId: t.id, targetId: null };
-                // 2) wenn Angreifer gesetzt aber kein Ziel -> set Ziel (wenn anders)
-                if (!cur.targetId) return { attackerId: cur.attackerId, targetId: t.id === cur.attackerId ? null : t.id };
-                // 3) wenn beides gesetzt -> NICHT automatisch umschalten (fix!)
+                if (!cur.targetId)
+                    return {
+                        attackerId: cur.attackerId,
+                        targetId: t.id === cur.attackerId ? null : t.id,
+                    };
                 return cur;
             });
             return;
         }
 
-        // frei klicken
         if (!selectedId || selectedId === t.id) {
             setSelectedId(t.id);
             setTargetId(null);
@@ -1004,7 +1038,7 @@ export default function Board({ socket, session, onLeave }) {
                                     );
                                 })}
 
-                                {/* EFFECTS: markers (2.5D wieder drin) */}
+                                {/* EFFECTS: markers */}
                                 {markers.map((m) => {
                                     const markerType = String(m.markerType || "OBJECT").toUpperCase();
                                     const isSel = m.id === selectedEffectId;
@@ -1012,7 +1046,7 @@ export default function Board({ socket, session, onLeave }) {
                                     const pres = markerPresentation(markerType);
 
                                     const outerR = Math.max(12, Math.round(hexSize * 0.42));
-                                    const innerR = Math.max(10, Math.round(hexSize * 0.30));
+                                    const innerR = Math.max(10, Math.round(hexSize * 0.3));
                                     const iconSize = Math.max(14, Math.round(hexSize * 0.38));
                                     const labelSize = Math.max(10, Math.round(hexSize * 0.22));
                                     const dmOnlyOverlay = isDm && vis === "DM";
@@ -1034,7 +1068,6 @@ export default function Board({ socket, session, onLeave }) {
                                                 handleDeleteEffect(m.id);
                                             }}
                                         >
-                                            {/* Bodenschatten (2.5D) */}
                                             <Circle
                                                 x={0}
                                                 y={outerR * 0.32}
@@ -1058,7 +1091,6 @@ export default function Board({ socket, session, onLeave }) {
                                                 />
                                             )}
 
-                                            {/* Base */}
                                             <Circle
                                                 x={0}
                                                 y={0}
@@ -1073,7 +1105,6 @@ export default function Board({ socket, session, onLeave }) {
                                                 shadowOffsetY={3}
                                             />
 
-                                            {/* Highlight (2.5D) */}
                                             <Circle
                                                 x={-outerR * 0.28}
                                                 y={-outerR * 0.28}
@@ -1126,30 +1157,23 @@ export default function Board({ socket, session, onLeave }) {
                                     );
                                 })}
 
-                                {/* Last Attack Line (aus Event-Log, history-synced für alle) */}
-                                {lastAttackLine && (
-                                    <Group listening={false}>
+                                {/* Persistent Attack Lines (solid) */}
+                                {persistentAttackLines.map((ln) => (
+                                    <Group key={`${ln.attackerId}->${ln.targetId}`} listening={false}>
                                         <Line
-                                            points={[lastAttackLine.ax, lastAttackLine.ay, lastAttackLine.bx, lastAttackLine.by]}
-                                            stroke={lastAttackLine.color || "red"}
+                                            points={[ln.ax, ln.ay, ln.bx, ln.by]}
+                                            stroke={ln.color || "red"}
                                             strokeWidth={Math.max(4, Math.round(hexSize * 0.12))}
                                             lineCap="round"
                                             lineJoin="round"
                                             opacity={0.92}
-                                            shadowColor={lastAttackLine.color || "red"}
+                                            shadowColor={ln.color || "red"}
                                             shadowBlur={10}
                                             shadowOpacity={0.55}
                                         />
-                                        <ArrowHead
-                                            ax={lastAttackLine.ax}
-                                            ay={lastAttackLine.ay}
-                                            bx={lastAttackLine.bx}
-                                            by={lastAttackLine.by}
-                                            color={lastAttackLine.color || "red"}
-                                            hexSize={hexSize}
-                                        />
+                                        <ArrowHead ax={ln.ax} ay={ln.ay} bx={ln.bx} by={ln.by} color={ln.color || "red"} hexSize={hexSize} />
                                     </Group>
-                                )}
+                                ))}
 
                                 {/* Preview Attack Line (Lock-Auswahl) – gestrichelt */}
                                 {attackLock && previewLine && (
@@ -1157,7 +1181,7 @@ export default function Board({ socket, session, onLeave }) {
                                         <Line
                                             points={[previewLine.ax, previewLine.ay, previewLine.bx, previewLine.by]}
                                             stroke={previewLine.color || "red"}
-                                            strokeWidth={Math.max(3, Math.round(hexSize * 0.10))}
+                                            strokeWidth={Math.max(3, Math.round(hexSize * 0.1))}
                                             lineCap="round"
                                             lineJoin="round"
                                             opacity={0.75}
@@ -1166,14 +1190,7 @@ export default function Board({ socket, session, onLeave }) {
                                             shadowBlur={8}
                                             shadowOpacity={0.35}
                                         />
-                                        <ArrowHead
-                                            ax={previewLine.ax}
-                                            ay={previewLine.ay}
-                                            bx={previewLine.bx}
-                                            by={previewLine.by}
-                                            color={previewLine.color || "red"}
-                                            hexSize={hexSize}
-                                        />
+                                        <ArrowHead ax={previewLine.ax} ay={previewLine.ay} bx={previewLine.bx} by={previewLine.by} color={previewLine.color || "red"} hexSize={hexSize} />
                                     </Group>
                                 )}
 
@@ -1182,7 +1199,7 @@ export default function Board({ socket, session, onLeave }) {
                                     <Token
                                         key={t.id}
                                         token={t}
-                                        isSelf={t.id === selfId}
+                                        selfId={selfId}
                                         isDm={isDm}
                                         selected={attackLock ? t.id === attackPick.attackerId : t.id === selectedId}
                                         targeted={attackLock ? t.id === attackPick.targetId : t.id === targetId}
@@ -1192,6 +1209,7 @@ export default function Board({ socket, session, onLeave }) {
                                         onMove={(id, nx, ny) => moveToken(id, nx, ny)}
                                         onClick={() => onTokenClick(t)}
                                         onHpChange={(id, hp) => setEnemyHp(id, hp)}
+                                        onRemoveEnemy={(id) => removeEnemy(id)}
                                     />
                                 ))}
 
@@ -1224,13 +1242,11 @@ export default function Board({ socket, session, onLeave }) {
                     </div>
 
                     <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-                        Steuerung: Token ziehen = bewegen (dein Token; DM kann Gegner ziehen). Zoom: Mausrad. Pan: Shift+Linksklick ziehen
-                        oder Mausrad-Klick ziehen.
+                        Steuerung: Token ziehen = bewegen (dein Token; DM kann Gegner ziehen). Zoom: Mausrad. Pan: Shift+Linksklick ziehen oder
+                        Mausrad-Klick ziehen.
                         <br />
-                        Angriff: Mit <b>„Angriff auswählen (Lock)”</b> fixierst du Angreifer/Ziel, damit der Pfeil nicht rutscht.
-                        <br />
-                        Hinweis: Der <b>durchgezogene</b> Pfeil ist immer der <b>letzte geloggte Angriff</b> (auch nach Join via History). Der
-                        <b>gestrichelte</b> Pfeil ist nur die Preview während Lock-Auswahl.
+                        Angriff: Mit <b>„Angriff auswählen (Lock)”</b> wählst du Angreifer → Ziel und setzt danach den Angriff. Die Pfeile bleiben, bis du
+                        ein neues Ziel setzt oder ein Gegner entfernt wird.
                     </div>
                 </div>
 
@@ -1261,9 +1277,9 @@ export default function Board({ socket, session, onLeave }) {
                         )}
                     </div>
 
-                    {/* ATTACK LOCK */}
+                    {/* ATTACK PICK */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Angriff (fixiert)</div>
+                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Angriff (Pfeil bleibt)</div>
 
                         <div style={{ display: "grid", gap: 8 }}>
                             <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
@@ -1273,10 +1289,7 @@ export default function Board({ socket, session, onLeave }) {
                                     onChange={(e) => {
                                         const v = e.target.checked;
                                         setAttackLock(v);
-                                        if (!v) {
-                                            // beim Lock aus: Preview weg (damit es nicht verwirrt)
-                                            setAttackPick({ attackerId: null, targetId: null });
-                                        }
+                                        if (!v) setAttackPick({ attackerId: null, targetId: null });
                                     }}
                                 />
                                 Angriff auswählen (Lock)
@@ -1292,25 +1305,70 @@ export default function Board({ socket, session, onLeave }) {
                             </div>
 
                             <div>
-                                <button onClick={triggerAttack} disabled={!canAttack}>
-                                    Angriff ins Log
+                                <button onClick={setAttack} disabled={!canSetAttack}>
+                                    Angriff setzen
                                 </button>
-                                <button
-                                    style={{ marginLeft: 8 }}
-                                    onClick={() => setAttackPick({ attackerId: null, targetId: null })}
-                                >
-                                    Neuen Angriff wählen
+                                <button style={{ marginLeft: 8 }} onClick={() => setAttackPick({ attackerId: null, targetId: null })}>
+                                    Neu wählen
                                 </button>
                             </div>
 
                             <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                Wenn Lock aktiv: Klicke <b>Angreifer</b> → <b>Ziel</b>. Danach bleibt die Auswahl fix.
-                                Der Angriff erscheint für alle im Log, und der durchgezogene Pfeil springt auf den letzten Log-Eintrag.
+                                Wenn Lock aktiv: Klicke <b>Angreifer</b> → <b>Ziel</b>. Danach <b>„Angriff setzen“</b>.
                             </div>
                         </div>
                     </div>
 
-                    {/* ENEMY */}
+                    {/* DM: ENEMIES PANEL (HP +/- + Remove) */}
+                    {isDm && (
+                        <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                            <div style={{ fontWeight: 700, marginBottom: 8 }}>Gegner & HP (nur DM)</div>
+
+                            {enemiesArr.length === 0 ? (
+                                <div style={{ fontSize: 13, opacity: 0.7 }}>Keine Gegner auf dem Feld.</div>
+                            ) : (
+                                <div style={{ display: "grid", gap: 8 }}>
+                                    {enemiesArr.map((en) => {
+                                        const hp = typeof en.hp === "number" ? en.hp : 0;
+                                        return (
+                                            <div
+                                                key={en.id}
+                                                style={{
+                                                    border: "1px solid #eee",
+                                                    borderRadius: 10,
+                                                    padding: 8,
+                                                    display: "grid",
+                                                    gap: 6,
+                                                }}
+                                            >
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                                    <div style={{ fontWeight: 700, flex: 1 }}>{en.name}</div>
+                                                    <div style={{ fontFamily: "monospace", opacity: 0.85 }}>HP {hp}</div>
+                                                </div>
+
+                                                <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+                                                    <button onClick={() => setEnemyHp(en.id, hp - 1)}>-</button>
+                                                    <button onClick={() => setEnemyHp(en.id, hp + 1)}>+</button>
+                                                    <button onClick={() => clearAttackFor(en.id)} title="Pfeil dieses Gegners löschen">
+                                                        Angriff löschen
+                                                    </button>
+                                                    <button onClick={() => removeEnemy(en.id)} style={{ marginLeft: "auto", background: "#ffe5e5" }}>
+                                                        Entfernen
+                                                    </button>
+                                                </div>
+
+                                                <div style={{ fontSize: 12, opacity: 0.7 }}>
+                                                    Tipp: Entfernen löscht auch alle Angriffe, die diesen Gegner betreffen.
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ENEMY ADD */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Gegner hinzufügen</div>
 
@@ -1328,6 +1386,7 @@ export default function Board({ socket, session, onLeave }) {
                                         onChange={(e) => setEnemyHpInput(e.target.value)}
                                         style={{ width: "100%" }}
                                         inputMode="numeric"
+                                        disabled={!isDm}
                                     />
                                 </div>
                                 <div style={{ width: 1 }} />
@@ -1340,6 +1399,7 @@ export default function Board({ socket, session, onLeave }) {
                                     onChange={(e) => setEnemyImgUrl(e.target.value)}
                                     placeholder="https://...png"
                                     style={{ width: "100%" }}
+                                    disabled={!isDm}
                                 />
                             </div>
 
@@ -1358,51 +1418,28 @@ export default function Board({ socket, session, onLeave }) {
                             >
                                 Gegner platzieren (Klick auf Karte)
                             </button>
-
-                            <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                Hinweis: HP +/- am Token funktionieren vollständig, sobald der Server <code>token:setHp</code> unterstützt.
-                            </div>
                         </div>
                     </div>
 
                     {/* EVENTS / EFFECTS */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Events & Effekte</div>
+                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Effekte</div>
 
                         <div style={{ display: "grid", gap: 8 }}>
                             <div>
                                 <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Aktion</label>
                                 <select value={eventKind} onChange={(e) => setEventKind(e.target.value)} style={{ width: "100%" }}>
-                                    <option value="ATTACK">Angriff (Auswahl via Lock-Box oben)</option>
+                                    <option value="ATTACK">Angriff (oben)</option>
                                     <option value="TREASURE">Eventmarker: Schatz</option>
                                     <option value="TRAP">Eventmarker: Falle</option>
                                     <option value="LEVER">Eventmarker: Hebel</option>
                                     <option value="PLATE">Eventmarker: Trittplatte</option>
                                     <option value="KEY">Eventmarker: Schlüssel</option>
                                     <option value="OBJECT">Eventmarker: Objekt (Beschriftung)</option>
-                                    <option value="NOTE">Notiz (Log)</option>
                                     <option value="WALL_FIRE">Feuerwand setzen</option>
                                     <option value="WALL_ICE">Eiswand setzen</option>
                                 </select>
                             </div>
-
-                            {eventKind === "NOTE" && (
-                                <>
-                                    <div>
-                                        <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Text</label>
-                                        <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} style={{ width: "100%" }} />
-                                    </div>
-                                    <button
-                                        onClick={() => {
-                                            setPlacingEnemy(false);
-                                            setPlaceMode(null);
-                                            triggerNote();
-                                        }}
-                                    >
-                                        Notiz ins Log
-                                    </button>
-                                </>
-                            )}
 
                             {eventKind === "TREASURE" && (
                                 <>
@@ -1595,25 +1632,8 @@ export default function Board({ socket, session, onLeave }) {
                         </div>
                     </div>
 
-                    {/* ANGRIFFS-LOG */}
-                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Angriffs-Log (für alle)</div>
-                        <div style={{ maxHeight: 180, overflow: "auto", fontSize: 13, display: "grid", gap: 6 }}>
-                            {attackEvents.length === 0 && <div style={{ opacity: 0.7 }}>Noch keine Angriffe.</div>}
-                            {attackEvents
-                                .slice()
-                                .reverse()
-                                .map((ev) => (
-                                    <div key={ev.id} style={{ borderBottom: "1px solid #eee", paddingBottom: 6 }}>
-                                        <div style={{ opacity: 0.7, fontSize: 11 }}>{new Date(ev.at).toLocaleTimeString()}</div>
-                                        <div>{formatEventLine(ev)}</div>
-                                    </div>
-                                ))}
-                        </div>
-                    </div>
-
                     {/* SELECTED EFFECT */}
-                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Ausgewählter Effekt</div>
 
                         {!selectedEffect ? (
@@ -1651,23 +1671,6 @@ export default function Board({ socket, session, onLeave }) {
                                 <button onClick={() => setSelectedEffectId(null)}>Auswahl aufheben</button>
                             </div>
                         )}
-                    </div>
-
-                    {/* EVENT LOG */}
-                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
-                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Event Log</div>
-                        <div style={{ maxHeight: 320, overflow: "auto", fontSize: 13, display: "grid", gap: 6 }}>
-                            {visibleEventsForLog.length === 0 && <div style={{ opacity: 0.7 }}>Noch keine Events.</div>}
-                            {visibleEventsForLog
-                                .slice()
-                                .reverse()
-                                .map((ev) => (
-                                    <div key={ev.id} style={{ borderBottom: "1px solid #eee", paddingBottom: 6 }}>
-                                        <div style={{ opacity: 0.7, fontSize: 11 }}>{new Date(ev.at).toLocaleTimeString()}</div>
-                                        <div>{formatEventLine(ev)}</div>
-                                    </div>
-                                ))}
-                        </div>
                     </div>
 
                     <div style={{ marginTop: 10, fontSize: 12, opacity: 0.75 }}>
@@ -1732,29 +1735,41 @@ function ArrowHead({ ax, ay, bx, by, color, hexSize }) {
     );
 }
 
-function Token({ token, isSelf, isDm, onMove, onHpChange, hexSize, mapW, mapH, onClick, selected, targeted }) {
+function Token({
+    token,
+    selfId,
+    isDm,
+    onMove,
+    onHpChange,
+    onRemoveEnemy,
+    hexSize,
+    mapW,
+    mapH,
+    onClick,
+    selected,
+    targeted,
+}) {
     const avatar = useHtmlImage(token.imgUrl);
     const isEnemy = token.kind === "enemy";
     const ringColor = getTokenRingColor(token);
 
-    // Token fills hex
     const tokenHexSize = Math.max(14, hexSize * 0.98);
     const hexPts = useMemo(() => hexClipPolygonPoints(tokenHexSize), [tokenHexSize]);
 
     const hexW = Math.sqrt(3) * tokenHexSize;
     const hexH = 2 * tokenHexSize;
 
-    // DM can drag enemies
+    const isSelf = token.id === selfId;
     const canDrag = isSelf || (isDm && isEnemy);
 
-    // IMPORTANT: Provide a real hit area
     const hitHexPoints = useMemo(() => hexCornerPoints(0, 0, tokenHexSize), [tokenHexSize]);
 
-    const hp = typeof token.hp === "number" ? token.hp : (isEnemy ? 0 : null);
+    // HP should be DM-only visible
+    const hp = typeof token.hp === "number" ? token.hp : 0;
 
     const bumpHp = (delta) => {
         if (!isDm || !isEnemy) return;
-        const next = Math.max(0, (typeof hp === "number" ? hp : 0) + delta);
+        const next = Math.max(0, hp + delta);
         onHpChange?.(token.id, next);
     };
 
@@ -1775,6 +1790,12 @@ function Token({ token, isSelf, isDm, onMove, onHpChange, hexSize, mapW, mapH, o
             onClick={(e) => {
                 e.cancelBubble = true;
                 onClick?.();
+            }}
+            onContextMenu={(e) => {
+                if (!isDm || !isEnemy) return;
+                e.evt.preventDefault();
+                e.cancelBubble = true;
+                onRemoveEnemy?.(token.id);
             }}
             clipFunc={(ctx) => {
                 ctx.beginPath();
@@ -1828,7 +1849,7 @@ function Token({ token, isSelf, isDm, onMove, onHpChange, hexSize, mapW, mapH, o
             <Line
                 points={hitHexPoints}
                 closed={true}
-                strokeWidth={Math.max(3, Math.round(hexSize * 0.10))}
+                strokeWidth={Math.max(3, Math.round(hexSize * 0.1))}
                 stroke={targeted ? "gold" : ringColor}
                 opacity={0.98}
                 shadowColor={targeted ? "gold" : ringColor}
@@ -1848,8 +1869,8 @@ function Token({ token, isSelf, isDm, onMove, onHpChange, hexSize, mapW, mapH, o
                 />
             )}
 
-            {/* HP badge (für enemies) */}
-            {isEnemy && (
+            {/* HP badge (nur DM, nur enemies) */}
+            {isDm && isEnemy && (
                 <Group x={0} y={-tokenHexSize * 0.78}>
                     <Rect
                         x={-30}
@@ -1864,55 +1885,44 @@ function Token({ token, isSelf, isDm, onMove, onHpChange, hexSize, mapW, mapH, o
                         shadowOffsetY={2}
                         listening={false}
                     />
-                    <Text
-                        text={`HP ${typeof hp === "number" ? hp : 0}`}
-                        x={-28}
-                        y={-10}
-                        width={56}
-                        align="center"
-                        fontSize={12}
-                        fill={"white"}
-                        listening={false}
-                    />
+                    <Text text={`HP ${hp}`} x={-28} y={-10} width={56} align="center" fontSize={12} fill={"white"} listening={false} />
 
                     {/* +/- nur DM */}
-                    {isDm && (
-                        <Group>
-                            <Rect
-                                x={-52}
-                                y={-12}
-                                width={18}
-                                height={22}
-                                cornerRadius={8}
-                                fill={"rgba(255,255,255,0.75)"}
-                                onMouseDown={(e) => {
-                                    e.cancelBubble = true;
-                                }}
-                                onClick={(e) => {
-                                    e.cancelBubble = true;
-                                    bumpHp(-1);
-                                }}
-                            />
-                            <Text text={"-"} x={-52} y={-11} width={18} align="center" fontSize={16} fill={"black"} listening={false} />
+                    <Group>
+                        <Rect
+                            x={-52}
+                            y={-12}
+                            width={18}
+                            height={22}
+                            cornerRadius={8}
+                            fill={"rgba(255,255,255,0.75)"}
+                            onMouseDown={(e) => {
+                                e.cancelBubble = true;
+                            }}
+                            onClick={(e) => {
+                                e.cancelBubble = true;
+                                bumpHp(-1);
+                            }}
+                        />
+                        <Text text={"-"} x={-52} y={-11} width={18} align="center" fontSize={16} fill={"black"} listening={false} />
 
-                            <Rect
-                                x={34}
-                                y={-12}
-                                width={18}
-                                height={22}
-                                cornerRadius={8}
-                                fill={"rgba(255,255,255,0.75)"}
-                                onMouseDown={(e) => {
-                                    e.cancelBubble = true;
-                                }}
-                                onClick={(e) => {
-                                    e.cancelBubble = true;
-                                    bumpHp(+1);
-                                }}
-                            />
-                            <Text text={"+"} x={34} y={-11} width={18} align="center" fontSize={16} fill={"black"} listening={false} />
-                        </Group>
-                    )}
+                        <Rect
+                            x={34}
+                            y={-12}
+                            width={18}
+                            height={22}
+                            cornerRadius={8}
+                            fill={"rgba(255,255,255,0.75)"}
+                            onMouseDown={(e) => {
+                                e.cancelBubble = true;
+                            }}
+                            onClick={(e) => {
+                                e.cancelBubble = true;
+                                bumpHp(+1);
+                            }}
+                        />
+                        <Text text={"+"} x={34} y={-11} width={18} align="center" fontSize={16} fill={"black"} listening={false} />
+                    </Group>
                 </Group>
             )}
 

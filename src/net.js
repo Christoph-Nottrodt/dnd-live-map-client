@@ -3,13 +3,21 @@ import { io } from "socket.io-client";
 // ✅ Online-ready: per ENV steuerbar
 // Lokal: keine .env nötig -> Fallback auf localhost:3001
 export const SERVER_URL =
-  (import.meta.env?.VITE_SERVER_URL && String(import.meta.env.VITE_SERVER_URL).trim()) ||
+  (import.meta.env?.VITE_SERVER_URL &&
+    String(import.meta.env.VITE_SERVER_URL).trim()) ||
   "http://localhost:3001";
 
 export function makeSocket() {
   return io(SERVER_URL, {
     transports: ["websocket"],
     withCredentials: true,
+
+    // ✅ robust(er) in realen Netzen (WLAN/Handy)
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 300,
+    reconnectionDelayMax: 3000,
+    timeout: 8000,
   });
 }
 
