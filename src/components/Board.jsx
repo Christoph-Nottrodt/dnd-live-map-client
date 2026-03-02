@@ -138,10 +138,7 @@ function getTokenRingColor(token) {
     if (token?.kind === "enemy") return "rgba(160,0,0,0.85)";
     if (typeof token?.color === "string" && token.color.trim())
         return token.color.trim();
-    const idx = hashToIndex(
-        String(token?.id || ""),
-        PLAYER_COLOR_PALETTE.length
-    );
+    const idx = hashToIndex(String(token?.id || ""), PLAYER_COLOR_PALETTE.length);
     return PLAYER_COLOR_PALETTE[idx];
 }
 
@@ -285,7 +282,7 @@ export default function Board({ socket, session, onLeave }) {
     const [keyLabel, setKeyLabel] = useState("Schlüssel");
     const [objectLabel, setObjectLabel] = useState("Beschriftung…");
 
-    // ✅ Sichtbarkeit pro Aktion (Option A)
+    // ✅ Sichtbarkeit pro Aktion
     const [treasureDmOnly, setTreasureDmOnly] = useState(false);
     const [trapDmOnly, setTrapDmOnly] = useState(false);
     const [leverDmOnly, setLeverDmOnly] = useState(false);
@@ -415,7 +412,9 @@ export default function Board({ socket, session, onLeave }) {
 
     // Sort tokens by y
     const tokensArr = useMemo(() => {
-        return Object.values(state.tokens).sort((a, b) => (a.y || 0) - (b.y || 0));
+        return Object.values(state.tokens).sort(
+            (a, b) => (a.y || 0) - (b.y || 0)
+        );
     }, [state.tokens]);
 
     const gridLines = useMemo(() => {
@@ -424,14 +423,10 @@ export default function Board({ socket, session, onLeave }) {
     }, [showGrid, state.map.width, state.map.height, hexSize]);
 
     const setMap = () => {
-        socket.emit(
-            "map:set",
-            { roomId, url: mapUrl, width: mapW, height: mapH },
-            (res) => {
-                if (res && res.ok === false)
-                    alert("Map set failed: " + (res.error || "unknown"));
-            }
-        );
+        socket.emit("map:set", { roomId, url: mapUrl, width: mapW, height: mapH }, (res) => {
+            if (res && res.ok === false)
+                alert("Map set failed: " + (res.error || "unknown"));
+        });
     };
 
     const handleMapUpload = async (e) => {
@@ -561,40 +556,26 @@ export default function Board({ socket, session, onLeave }) {
     const target = targetId ? state.tokens[targetId] : null;
     const canAttack = selected && target && selectedId !== targetId;
 
-    // ✅ Attack immer ALL (Option A)
+    // ✅ Attack immer ALL
     const triggerAttack = () => {
         if (!canAttack) return;
         const text = `${selected.name} greift ${target.name} an!`;
         socket.emit(
             "event:attack",
-            {
-                roomId,
-                attackerId: selectedId,
-                targetId: targetId,
-                text,
-                visibility: "ALL",
-            },
+            { roomId, attackerId: selectedId, targetId: targetId, text, visibility: "ALL" },
             (res) => {
-                if (!res?.ok)
-                    alert("Attack event failed: " + (res?.error || "unknown"));
+                if (!res?.ok) alert("Attack event failed: " + (res?.error || "unknown"));
             }
         );
     };
 
-    // ✅ Note immer ALL (Option A)
+    // ✅ Note immer ALL
     const triggerNote = () => {
         socket.emit(
             "event:log",
-            {
-                roomId,
-                type: "note",
-                title: "Notiz",
-                text: String(noteText || "").slice(0, 240),
-                visibility: "ALL",
-            },
+            { roomId, type: "note", title: "Notiz", text: String(noteText || "").slice(0, 240), visibility: "ALL" },
             (res) => {
-                if (res && res.ok === false)
-                    alert("Note failed: " + (res.error || "unknown"));
+                if (res && res.ok === false) alert("Note failed: " + (res.error || "unknown"));
             }
         );
     };
@@ -657,8 +638,7 @@ export default function Board({ socket, session, onLeave }) {
                 "token:addEnemy",
                 { roomId, name: enemyName, imgUrl: enemyImgUrl, x: pos.x, y: pos.y },
                 (res) => {
-                    if (!res?.ok)
-                        alert("Add enemy failed: " + (res?.error || "unknown"));
+                    if (!res?.ok) alert("Add enemy failed: " + (res?.error || "unknown"));
                 }
             );
             setPlacingEnemy(false);
@@ -675,31 +655,17 @@ export default function Board({ socket, session, onLeave }) {
                     "effect:add",
                     {
                         roomId,
-                        effect: {
-                            kind: "marker",
-                            markerType,
-                            label,
-                            visibility: vis,
-                            x: pos.x,
-                            y: pos.y,
-                        },
+                        effect: { kind: "marker", markerType, label, visibility: vis, x: pos.x, y: pos.y },
                     },
                     (res) => {
-                        if (res && res.ok === false)
-                            alert("Effect add failed: " + (res.error || "unknown"));
+                        if (res && res.ok === false) alert("Effect add failed: " + (res.error || "unknown"));
                     }
                 );
 
                 const pres = markerPresentation(markerType);
                 socket.emit(
                     "event:log",
-                    {
-                        roomId,
-                        type: pres.logType,
-                        title: "Marker",
-                        text: `${pres.title} platziert: ${label}`,
-                        visibility: vis,
-                    },
+                    { roomId, type: pres.logType, title: "Marker", text: `${pres.title} platziert: ${label}`, visibility: vis },
                     () => { }
                 );
 
@@ -742,8 +708,7 @@ export default function Board({ socket, session, onLeave }) {
                         },
                     },
                     (res) => {
-                        if (res && res.ok === false)
-                            alert("Effect add failed: " + (res.error || "unknown"));
+                        if (res && res.ok === false) alert("Effect add failed: " + (res.error || "unknown"));
                     }
                 );
 
@@ -817,29 +782,13 @@ export default function Board({ socket, session, onLeave }) {
                                 style={{ width: 260 }}
                                 disabled={!isDm}
                             />
-                            <input
-                                value={mapW}
-                                onChange={(e) => setMapW(e.target.value)}
-                                style={{ width: 90 }}
-                                disabled={!isDm}
-                            />
-                            <input
-                                value={mapH}
-                                onChange={(e) => setMapH(e.target.value)}
-                                style={{ width: 90 }}
-                                disabled={!isDm}
-                            />
-                            <button onClick={setMap} disabled={!isDm}>
-                                Karte setzen
-                            </button>
+                            <input value={mapW} onChange={(e) => setMapW(e.target.value)} style={{ width: 90 }} disabled={!isDm} />
+                            <input value={mapH} onChange={(e) => setMapH(e.target.value)} style={{ width: 90 }} disabled={!isDm} />
+                            <button onClick={setMap} disabled={!isDm}>Karte setzen</button>
                             <input type="file" accept="image/*" onChange={handleMapUpload} disabled={!isDm} />
 
                             <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 10 }}>
-                                <input
-                                    type="checkbox"
-                                    checked={showGrid}
-                                    onChange={(e) => setShowGrid(e.target.checked)}
-                                />
+                                <input type="checkbox" checked={showGrid} onChange={(e) => setShowGrid(e.target.checked)} />
                                 Hex-Grid
                             </label>
 
@@ -1139,10 +1088,8 @@ export default function Board({ socket, session, onLeave }) {
                                                     : placeMode?.mode === "MARKER"
                                                         ? `Klicke: ${markerPresentation(placeMode.markerType).title} platzieren…`
                                                         : placeMode?.mode === "WALL" && placeMode.step === 1
-                                                            ? `Klicke Startpunkt: ${placeMode.element === "FIRE" ? "Feuerwand" : "Eiswand"
-                                                            }…`
-                                                            : `Klicke Endpunkt: ${placeMode?.element === "FIRE" ? "Feuerwand" : "Eiswand"
-                                                            }…`
+                                                            ? `Klicke Startpunkt: ${placeMode.element === "FIRE" ? "Feuerwand" : "Eiswand"}…`
+                                                            : `Klicke Endpunkt: ${placeMode?.element === "FIRE" ? "Feuerwand" : "Eiswand"}…`
                                             }
                                             x={20}
                                             y={20}
@@ -1262,19 +1209,12 @@ export default function Board({ socket, session, onLeave }) {
                             {eventKind === "ATTACK" && (
                                 <>
                                     <div style={{ fontSize: 13 }}>
-                                        <div>
-                                            Angreifer: <strong>{selected ? selected.name : "—"}</strong>
-                                        </div>
-                                        <div>
-                                            Ziel: <strong>{target ? target.name : "—"}</strong>
-                                        </div>
+                                        <div>Angreifer: <strong>{selected ? selected.name : "—"}</strong></div>
+                                        <div>Ziel: <strong>{target ? target.name : "—"}</strong></div>
                                     </div>
 
                                     <div>
-                                        <button onClick={triggerAttack} disabled={!canAttack}>
-                                            Attack triggern
-                                        </button>
-
+                                        <button onClick={triggerAttack} disabled={!canAttack}>Attack triggern</button>
                                         <button
                                             style={{ marginLeft: 8 }}
                                             onClick={() => {
@@ -1513,9 +1453,7 @@ export default function Board({ socket, session, onLeave }) {
                         ) : (
                             <div style={{ display: "grid", gap: 8 }}>
                                 <div style={{ fontSize: 13 }}>
-                                    <div>
-                                        <strong>Typ:</strong> {selectedEffect.kind}
-                                    </div>
+                                    <div><strong>Typ:</strong> {selectedEffect.kind}</div>
                                     {selectedEffect.kind === "wall" && (
                                         <div>
                                             <strong>Element:</strong>{" "}
@@ -1535,10 +1473,7 @@ export default function Board({ socket, session, onLeave }) {
                                 </div>
 
                                 {isDm ? (
-                                    <button
-                                        onClick={() => handleDeleteEffect(selectedEffect.id)}
-                                        style={{ background: "#ffe5e5" }}
-                                    >
+                                    <button onClick={() => handleDeleteEffect(selectedEffect.id)} style={{ background: "#ffe5e5" }}>
                                         Effekt löschen (DM)
                                     </button>
                                 ) : (
@@ -1556,7 +1491,9 @@ export default function Board({ socket, session, onLeave }) {
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Event Log</div>
                         <div style={{ maxHeight: 320, overflow: "auto", fontSize: 13, display: "grid", gap: 6 }}>
-                            {visibleEventsForLog.length === 0 && <div style={{ opacity: 0.7 }}>Noch keine Events.</div>}
+                            {visibleEventsForLog.length === 0 && (
+                                <div style={{ opacity: 0.7 }}>Noch keine Events.</div>
+                            )}
                             {visibleEventsForLog
                                 .slice()
                                 .reverse()
@@ -1657,10 +1594,7 @@ function Token({
 
     // Token fills hex
     const tokenHexSize = Math.max(14, hexSize * 0.98);
-    const hexPts = useMemo(
-        () => hexClipPolygonPoints(tokenHexSize),
-        [tokenHexSize]
-    );
+    const hexPts = useMemo(() => hexClipPolygonPoints(tokenHexSize), [tokenHexSize]);
 
     const hexW = Math.sqrt(3) * tokenHexSize;
     const hexH = 2 * tokenHexSize;
@@ -1668,15 +1602,29 @@ function Token({
     // DM can drag enemies
     const canDrag = isSelf || (isDm && isEnemy);
 
+    // IMPORTANT: Provide a real hit area (because most children are listening={false})
+    const hitHexPoints = useMemo(() => hexCornerPoints(0, 0, tokenHexSize), [tokenHexSize]);
+
     return (
         <Group
             x={token.x}
             y={token.y}
             draggable={canDrag}
+            onMouseDown={(e) => {
+                // make sure Stage onMouseDown doesn't interfere with drag/click
+                e.cancelBubble = true;
+            }}
+            onDragStart={(e) => {
+                e.cancelBubble = true;
+            }}
+            onDragEnd={(e) => {
+                e.cancelBubble = true;
+            }}
             onClick={(e) => {
                 e.cancelBubble = true;
                 onClick?.();
             }}
+            // Keep hex clipping for visuals
             clipFunc={(ctx) => {
                 ctx.beginPath();
                 ctx.moveTo(hexPts[0].x, hexPts[0].y);
@@ -1698,6 +1646,16 @@ function Token({
                 onMove?.(token.id, clamped.x, clamped.y);
             }}
         >
+            {/* Hit area (transparent) */}
+            <Line
+                points={hitHexPoints}
+                closed={true}
+                fill={"rgba(0,0,0,0.001)"}
+                strokeWidth={0}
+                listening={true}
+            />
+
+            {/* Background */}
             <Rect
                 x={-hexW / 2}
                 y={-hexH / 2}
@@ -1707,6 +1665,7 @@ function Token({
                 listening={false}
             />
 
+            {/* Avatar / fallback */}
             {avatar ? (
                 <KonvaImage
                     image={avatar}
@@ -1727,8 +1686,9 @@ function Token({
                 />
             )}
 
+            {/* Outline */}
             <Line
-                points={hexCornerPoints(0, 0, tokenHexSize)}
+                points={hitHexPoints}
                 closed={true}
                 strokeWidth={Math.max(3, Math.round(hexSize * 0.10))}
                 stroke={targeted ? "gold" : ringColor}
@@ -1741,7 +1701,7 @@ function Token({
 
             {(selected || isSelf) && (
                 <Line
-                    points={hexCornerPoints(0, 0, tokenHexSize * 0.90)}
+                    points={hexCornerPoints(0, 0, tokenHexSize * 0.9)}
                     closed={true}
                     strokeWidth={Math.max(2, Math.round(hexSize * 0.07))}
                     stroke={"rgba(255,255,255,0.9)"}
