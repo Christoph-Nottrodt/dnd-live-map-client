@@ -363,6 +363,9 @@ export default function Board({ socket, session, onLeave }) {
                         t.x = patch.x;
                         t.y = patch.y;
                     }
+                } else if (patch.type === "token:hp") {
+                    const t = next.tokens?.[patch.id];
+                    if (t) t.hp = patch.hp;
                 } else if (patch.type === "token:remove") {
                     delete next.tokens[patch.id];
                 } else if (patch.type === "room:dm") {
@@ -407,6 +410,18 @@ export default function Board({ socket, session, onLeave }) {
         };
     }, [socket]);
 
+    // History Sync: beim Join die letzten Events holen (Server muss event:history unterstützen)
+    useEffect(() => {
+        if (!socket || !roomId) return;
+
+        socket.emit("event:history", { roomId, limit: 120 }, (res) => {
+            if (!res?.ok) return; // wenn Server es noch nicht kann: kein Crash
+            const arr = Array.isArray(res.events) ? res.events : [];
+            arr.sort((a, b) => (a?.at || 0) - (b?.at || 0));
+            setEvents(arr.slice(-120));
+        });
+    }, [socket, roomId]);
+
     // Event log (für alle sichtbar; DM-only wird beim Client trotzdem ausgefiltert)
     const visibleEventsForLog = useMemo(() => {
         if (isDm) return events;
@@ -417,6 +432,23 @@ export default function Board({ socket, session, onLeave }) {
         // für alle sichtbar (du wolltest nachvollziehbar)
         return visibleEventsForLog.filter((e) => e?.type === "attack").slice(-40);
     }, [visibleEventsForLog]);
+
+    // Letzter Angriff aus dem Log (history-synced)
+    const lastAttackEvent = useMemo(() => {
+        const arr = visibleEventsForLog.filter((e) => e?.type === "attack");
+        return arr.length ? arr[arr.length - 1] : null;
+    }, [visibleEventsForLog]);
+
+    // Pfeil aus letztem Attack-Event (global / history-synced)
+    const lastAttackLine = useMemo(() => {
+        if (!lastAttackEvent?.attackerId || !lastAttackEvent?.targetId) return null;
+        const a = state.tokens[lastAttackEvent.attackerId];
+        const b = state.tokens[lastAttackEvent.targetId];
+        if (!a || !b) return null;
+
+        const color = getTokenRingColor(a);
+        return { ax: a.x, ay: a.y, bx: b.x, by: b.y, color };
+    }, [state.tokens, lastAttackEvent]);
 
     // Sort tokens by y
     const tokensArr = useMemo(() => {
@@ -756,8 +788,8 @@ export default function Board({ socket, session, onLeave }) {
         }
     };
 
-    // Pfeil: IMMER aus attackPick (fixiert)
-    const persistentLine = useMemo(() => {
+    // Preview-Pfeil: aus attackPick (fixiert) – nur zur Auswahl/Preview
+    const previewLine = useMemo(() => {
         if (!attackPick.attackerId || !attackPick.targetId) return null;
         const a = state.tokens[attackPick.attackerId];
         const b = state.tokens[attackPick.targetId];
@@ -1094,26 +1126,52 @@ export default function Board({ socket, session, onLeave }) {
                                     );
                                 })}
 
-                                {/* Persistent Attack Line (fixiert) */}
-                                {persistentLine && (
+                                {/* Last Attack Line (aus Event-Log, history-synced für alle) */}
+                                {lastAttackLine && (
                                     <Group listening={false}>
                                         <Line
-                                            points={[persistentLine.ax, persistentLine.ay, persistentLine.bx, persistentLine.by]}
-                                            stroke={persistentLine.color || "red"}
+                                            points={[lastAttackLine.ax, lastAttackLine.ay, lastAttackLine.bx, lastAttackLine.by]}
+                                            stroke={lastAttackLine.color || "red"}
                                             strokeWidth={Math.max(4, Math.round(hexSize * 0.12))}
                                             lineCap="round"
                                             lineJoin="round"
-                                            opacity={0.95}
-                                            shadowColor={persistentLine.color || "red"}
+                                            opacity={0.92}
+                                            shadowColor={lastAttackLine.color || "red"}
                                             shadowBlur={10}
-                                            shadowOpacity={0.6}
+                                            shadowOpacity={0.55}
                                         />
                                         <ArrowHead
-                                            ax={persistentLine.ax}
-                                            ay={persistentLine.ay}
-                                            bx={persistentLine.bx}
-                                            by={persistentLine.by}
-                                            color={persistentLine.color || "red"}
+                                            ax={lastAttackLine.ax}
+                                            ay={lastAttackLine.ay}
+                                            bx={lastAttackLine.bx}
+                                            by={lastAttackLine.by}
+                                            color={lastAttackLine.color || "red"}
+                                            hexSize={hexSize}
+                                        />
+                                    </Group>
+                                )}
+
+                                {/* Preview Attack Line (Lock-Auswahl) – gestrichelt */}
+                                {attackLock && previewLine && (
+                                    <Group listening={false}>
+                                        <Line
+                                            points={[previewLine.ax, previewLine.ay, previewLine.bx, previewLine.by]}
+                                            stroke={previewLine.color || "red"}
+                                            strokeWidth={Math.max(3, Math.round(hexSize * 0.10))}
+                                            lineCap="round"
+                                            lineJoin="round"
+                                            opacity={0.75}
+                                            dash={[10, 10]}
+                                            shadowColor={previewLine.color || "red"}
+                                            shadowBlur={8}
+                                            shadowOpacity={0.35}
+                                        />
+                                        <ArrowHead
+                                            ax={previewLine.ax}
+                                            ay={previewLine.ay}
+                                            bx={previewLine.bx}
+                                            by={previewLine.by}
+                                            color={previewLine.color || "red"}
                                             hexSize={hexSize}
                                         />
                                     </Group>
@@ -1126,12 +1184,8 @@ export default function Board({ socket, session, onLeave }) {
                                         token={t}
                                         isSelf={t.id === selfId}
                                         isDm={isDm}
-                                        selected={
-                                            attackLock ? t.id === attackPick.attackerId : t.id === selectedId
-                                        }
-                                        targeted={
-                                            attackLock ? t.id === attackPick.targetId : t.id === targetId
-                                        }
+                                        selected={attackLock ? t.id === attackPick.attackerId : t.id === selectedId}
+                                        targeted={attackLock ? t.id === attackPick.targetId : t.id === targetId}
                                         hexSize={hexSize}
                                         mapW={state.map.width}
                                         mapH={state.map.height}
@@ -1174,6 +1228,9 @@ export default function Board({ socket, session, onLeave }) {
                         oder Mausrad-Klick ziehen.
                         <br />
                         Angriff: Mit <b>„Angriff auswählen (Lock)”</b> fixierst du Angreifer/Ziel, damit der Pfeil nicht rutscht.
+                        <br />
+                        Hinweis: Der <b>durchgezogene</b> Pfeil ist immer der <b>letzte geloggte Angriff</b> (auch nach Join via History). Der
+                        <b>gestrichelte</b> Pfeil ist nur die Preview während Lock-Auswahl.
                     </div>
                 </div>
 
@@ -1217,7 +1274,7 @@ export default function Board({ socket, session, onLeave }) {
                                         const v = e.target.checked;
                                         setAttackLock(v);
                                         if (!v) {
-                                            // beim Lock aus: Pfeil weg (damit es nicht verwirrt)
+                                            // beim Lock aus: Preview weg (damit es nicht verwirrt)
                                             setAttackPick({ attackerId: null, targetId: null });
                                         }
                                     }}
@@ -1247,7 +1304,8 @@ export default function Board({ socket, session, onLeave }) {
                             </div>
 
                             <div style={{ fontSize: 12, opacity: 0.75 }}>
-                                Wenn Lock aktiv: Klicke <b>Angreifer</b> → <b>Ziel</b>. Danach bleibt der Pfeil fix.
+                                Wenn Lock aktiv: Klicke <b>Angreifer</b> → <b>Ziel</b>. Danach bleibt die Auswahl fix.
+                                Der Angriff erscheint für alle im Log, und der durchgezogene Pfeil springt auf den letzten Log-Eintrag.
                             </div>
                         </div>
                     </div>
