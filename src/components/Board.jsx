@@ -136,8 +136,7 @@ function hashToIndex(str, mod) {
 
 function getTokenRingColor(token) {
     if (token?.kind === "enemy") return "rgba(160,0,0,0.85)";
-    if (typeof token?.color === "string" && token.color.trim())
-        return token.color.trim();
+    if (typeof token?.color === "string" && token.color.trim()) return token.color.trim();
     const idx = hashToIndex(String(token?.id || ""), PLAYER_COLOR_PALETTE.length);
     return PLAYER_COLOR_PALETTE[idx];
 }
@@ -159,8 +158,7 @@ function wallStyle(element) {
 
 function formatEventLine(ev) {
     if (!ev) return "";
-    if (ev.type === "attack")
-        return ev.text || `${ev.attackerName ?? "?"} → ${ev.targetName ?? "?"}`;
+    if (ev.type === "attack") return ev.text || `${ev.attackerName ?? "?"} → ${ev.targetName ?? "?"}`;
     if (ev.type === "note") return ev.text || ev.title || "Notiz";
     if (ev.type === "loot") return ev.text || ev.title || "Schatz";
     if (ev.type === "trap") return ev.text || ev.title || "Falle";
@@ -233,6 +231,12 @@ function markerPresentation(markerType) {
     }
 }
 
+function toIntSafe(v, fallback) {
+    const n = Number(String(v ?? "").trim());
+    if (!Number.isFinite(n)) return fallback;
+    return Math.trunc(n);
+}
+
 export default function Board({ socket, session, onLeave }) {
     const { roomId } = session;
 
@@ -249,17 +253,20 @@ export default function Board({ socket, session, onLeave }) {
     const [events, setEvents] = useState([]);
 
     // Effects
-    const [effects, setEffects] = useState(() =>
-        Object.values(session.state.effects || {})
-    );
+    const [effects, setEffects] = useState(() => Object.values(session.state.effects || {}));
 
-    // selection
+    // selection (frei – NICHT der fixierte Angriff)
     const [selectedId, setSelectedId] = useState(null);
     const [targetId, setTargetId] = useState(null);
+
+    // Angriff Lock (fixiert)
+    const [attackLock, setAttackLock] = useState(false);
+    const [attackPick, setAttackPick] = useState({ attackerId: null, targetId: null });
 
     // Enemy creation UI
     const [enemyName, setEnemyName] = useState("Assassine");
     const [enemyImgUrl, setEnemyImgUrl] = useState("");
+    const [enemyHpInput, setEnemyHpInput] = useState("30");
     const [placingEnemy, setPlacingEnemy] = useState(false);
 
     // effect placement + selection
@@ -267,8 +274,8 @@ export default function Board({ socket, session, onLeave }) {
 
     // placement mode:
     // null
-    // { mode:"MARKER", markerType:"TREASURE"|"TRAP"|"LEVER"|"PLATE"|"KEY"|"OBJECT", label:string, visibility:"ALL"|"DM" }
-    // { mode:"WALL", element:"FIRE"|"ICE", visibility:"ALL"|"DM", step:1|2, from:{x,y}|null }
+    // { mode:"MARKER", markerType, label, visibility }
+    // { mode:"WALL", element, visibility, step, from }
     const [placeMode, setPlaceMode] = useState(null);
 
     // event/effect UI inputs
@@ -282,7 +289,7 @@ export default function Board({ socket, session, onLeave }) {
     const [keyLabel, setKeyLabel] = useState("Schlüssel");
     const [objectLabel, setObjectLabel] = useState("Beschriftung…");
 
-    // ✅ Sichtbarkeit pro Aktion
+    // Sichtbarkeit pro Aktion
     const [treasureDmOnly, setTreasureDmOnly] = useState(false);
     const [trapDmOnly, setTrapDmOnly] = useState(false);
     const [leverDmOnly, setLeverDmOnly] = useState(false);
@@ -320,11 +327,8 @@ export default function Board({ socket, session, onLeave }) {
     const toggleFullscreen = async () => {
         try {
             const el = boardContainerRef.current || document.documentElement;
-            if (!document.fullscreenElement) {
-                await el.requestFullscreen?.();
-            } else {
-                await document.exitFullscreen?.();
-            }
+            if (!document.fullscreenElement) await el.requestFullscreen?.();
+            else await document.exitFullscreen?.();
         } catch (e) {
             alert("Fullscreen nicht möglich: " + (e?.message || String(e)));
         }
@@ -352,8 +356,7 @@ export default function Board({ socket, session, onLeave }) {
                 const next = structuredClone(prev);
 
                 if (patch.type === "map:set") next.map = patch.map;
-                else if (patch.type === "token:upsert")
-                    next.tokens[patch.token.id] = patch.token;
+                else if (patch.type === "token:upsert") next.tokens[patch.token.id] = patch.token;
                 else if (patch.type === "token:move") {
                     const t = next.tokens[patch.id];
                     if (t) {
@@ -391,7 +394,7 @@ export default function Board({ socket, session, onLeave }) {
         const onEvent = (ev) => {
             setEvents((prev) => {
                 const next = [...prev, ev];
-                return next.slice(-80);
+                return next.slice(-120);
             });
         };
 
@@ -404,17 +407,20 @@ export default function Board({ socket, session, onLeave }) {
         };
     }, [socket]);
 
-    // Filter event log for non-DM: hide DM-only events if server sends them
+    // Event log (für alle sichtbar; DM-only wird beim Client trotzdem ausgefiltert)
     const visibleEventsForLog = useMemo(() => {
         if (isDm) return events;
         return events.filter((ev) => (ev?.visibility || "ALL") !== "DM");
     }, [events, isDm]);
 
+    const attackEvents = useMemo(() => {
+        // für alle sichtbar (du wolltest nachvollziehbar)
+        return visibleEventsForLog.filter((e) => e?.type === "attack").slice(-40);
+    }, [visibleEventsForLog]);
+
     // Sort tokens by y
     const tokensArr = useMemo(() => {
-        return Object.values(state.tokens).sort(
-            (a, b) => (a.y || 0) - (b.y || 0)
-        );
+        return Object.values(state.tokens).sort((a, b) => (a.y || 0) - (b.y || 0));
     }, [state.tokens]);
 
     const gridLines = useMemo(() => {
@@ -424,8 +430,7 @@ export default function Board({ socket, session, onLeave }) {
 
     const setMap = () => {
         socket.emit("map:set", { roomId, url: mapUrl, width: mapW, height: mapH }, (res) => {
-            if (res && res.ok === false)
-                alert("Map set failed: " + (res.error || "unknown"));
+            if (res && res.ok === false) alert("Map set failed: " + (res.error || "unknown"));
         });
     };
 
@@ -525,11 +530,25 @@ export default function Board({ socket, session, onLeave }) {
             return next;
         });
 
-        if (id === selfId) {
-            socket.emit("token:move", { roomId, x, y }, () => { });
-        } else {
-            socket.emit("token:move", { roomId, id, x, y }, () => { });
-        }
+        if (id === selfId) socket.emit("token:move", { roomId, x, y }, () => { });
+        else socket.emit("token:move", { roomId, id, x, y }, () => { });
+    };
+
+    // HP update (DM only)
+    const setEnemyHp = (tokenId, newHp) => {
+        const hp = Math.max(0, toIntSafe(newHp, 0));
+
+        // optimistic
+        setState((prev) => {
+            const next = structuredClone(prev);
+            if (next.tokens?.[tokenId]) {
+                next.tokens[tokenId].hp = hp;
+            }
+            return next;
+        });
+
+        // server sync (needs server support)
+        socket.emit("token:setHp", { roomId, id: tokenId, hp }, () => { });
     };
 
     // stage size
@@ -552,28 +571,44 @@ export default function Board({ socket, session, onLeave }) {
         };
     }, []);
 
-    const selected = selectedId ? state.tokens[selectedId] : null;
-    const target = targetId ? state.tokens[targetId] : null;
-    const canAttack = selected && target && selectedId !== targetId;
+    // Für UI (Angriff)
+    const uiSelected = selectedId ? state.tokens[selectedId] : null;
+    const uiTarget = targetId ? state.tokens[targetId] : null;
 
-    // ✅ Attack immer ALL
+    const lockedAttacker = attackPick.attackerId ? state.tokens[attackPick.attackerId] : null;
+    const lockedTarget = attackPick.targetId ? state.tokens[attackPick.targetId] : null;
+
+    const canAttack = lockedAttacker && lockedTarget && attackPick.attackerId !== attackPick.targetId;
+
     const triggerAttack = () => {
         if (!canAttack) return;
-        const text = `${selected.name} greift ${target.name} an!`;
+        const text = `${lockedAttacker.name} greift ${lockedTarget.name} an!`;
+
         socket.emit(
             "event:attack",
-            { roomId, attackerId: selectedId, targetId: targetId, text, visibility: "ALL" },
+            {
+                roomId,
+                attackerId: attackPick.attackerId,
+                targetId: attackPick.targetId,
+                text,
+                visibility: "ALL",
+            },
             (res) => {
                 if (!res?.ok) alert("Attack event failed: " + (res?.error || "unknown"));
             }
         );
     };
 
-    // ✅ Note immer ALL
     const triggerNote = () => {
         socket.emit(
             "event:log",
-            { roomId, type: "note", title: "Notiz", text: String(noteText || "").slice(0, 240), visibility: "ALL" },
+            {
+                roomId,
+                type: "note",
+                title: "Notiz",
+                text: String(noteText || "").slice(0, 240),
+                visibility: "ALL",
+            },
             (res) => {
                 if (res && res.ok === false) alert("Note failed: " + (res.error || "unknown"));
             }
@@ -585,9 +620,7 @@ export default function Board({ socket, session, onLeave }) {
         if (!isDm) return;
 
         socket.emit("effect:remove", { roomId, id }, (res) => {
-            if (res && res.ok === false) {
-                alert("Löschen fehlgeschlagen: " + (res.error || "unknown"));
-            }
+            if (res && res.ok === false) alert("Löschen fehlgeschlagen: " + (res.error || "unknown"));
         });
 
         setEffects((prev) => prev.filter((x) => x.id !== id));
@@ -618,9 +651,7 @@ export default function Board({ socket, session, onLeave }) {
 
         if (e.evt.button !== 0) return;
 
-        if (!placingEnemy && !placeMode) {
-            setSelectedEffectId(null);
-        }
+        if (!placingEnemy && !placeMode) setSelectedEffectId(null);
 
         const p = getWorldFromEvent();
         if (!p) return;
@@ -634,9 +665,10 @@ export default function Board({ socket, session, onLeave }) {
         }
 
         if (placingEnemy) {
+            const hp = Math.max(0, toIntSafe(enemyHpInput, 0));
             socket.emit(
                 "token:addEnemy",
-                { roomId, name: enemyName, imgUrl: enemyImgUrl, x: pos.x, y: pos.y },
+                { roomId, name: enemyName, imgUrl: enemyImgUrl, x: pos.x, y: pos.y, hp },
                 (res) => {
                     if (!res?.ok) alert("Add enemy failed: " + (res?.error || "unknown"));
                 }
@@ -714,13 +746,7 @@ export default function Board({ socket, session, onLeave }) {
 
                 socket.emit(
                     "event:log",
-                    {
-                        roomId,
-                        type: "effect",
-                        title: "Effekt",
-                        text: `${element === "FIRE" ? "Feuerwand" : "Eiswand"} gesetzt`,
-                        visibility: vis,
-                    },
+                    { roomId, type: "effect", title: "Effekt", text: `${element === "FIRE" ? "Feuerwand" : "Eiswand"} gesetzt`, visibility: vis },
                     () => { }
                 );
 
@@ -730,15 +756,16 @@ export default function Board({ socket, session, onLeave }) {
         }
     };
 
+    // Pfeil: IMMER aus attackPick (fixiert)
     const persistentLine = useMemo(() => {
-        if (!selectedId || !targetId) return null;
-        const a = state.tokens[selectedId];
-        const b = state.tokens[targetId];
+        if (!attackPick.attackerId || !attackPick.targetId) return null;
+        const a = state.tokens[attackPick.attackerId];
+        const b = state.tokens[attackPick.targetId];
         if (!a || !b) return null;
 
         const color = getTokenRingColor(a);
         return { ax: a.x, ay: a.y, bx: b.x, by: b.y, color };
-    }, [state.tokens, selectedId, targetId]);
+    }, [state.tokens, attackPick.attackerId, attackPick.targetId]);
 
     const wallsAll = useMemo(() => effects.filter((e) => e.kind === "wall"), [effects]);
     const markersAll = useMemo(() => effects.filter((e) => e.kind === "marker"), [effects]);
@@ -753,6 +780,31 @@ export default function Board({ socket, session, onLeave }) {
         return markersAll.filter((m) => (m?.visibility || "ALL") !== "DM");
     }, [markersAll, isDm]);
 
+    // Token click behaviour:
+    // - Wenn Angriff Lock aktiv: Klicks wählen Angreifer/Ziel in attackPick und ändern NICHT den Pfeil später
+    // - Wenn Lock aus: normal (selectedId/targetId) zum „rumklicken“
+    const onTokenClick = (t) => {
+        if (attackLock) {
+            setAttackPick((cur) => {
+                // 1) wenn kein Angreifer -> set
+                if (!cur.attackerId) return { attackerId: t.id, targetId: null };
+                // 2) wenn Angreifer gesetzt aber kein Ziel -> set Ziel (wenn anders)
+                if (!cur.targetId) return { attackerId: cur.attackerId, targetId: t.id === cur.attackerId ? null : t.id };
+                // 3) wenn beides gesetzt -> NICHT automatisch umschalten (fix!)
+                return cur;
+            });
+            return;
+        }
+
+        // frei klicken
+        if (!selectedId || selectedId === t.id) {
+            setSelectedId(t.id);
+            setTargetId(null);
+        } else {
+            setTargetId(t.id);
+        }
+    };
+
     return (
         <div ref={boardContainerRef}>
             <div style={{ display: "flex", gap: 12, alignItems: "start", flexWrap: "wrap" }}>
@@ -760,17 +812,12 @@ export default function Board({ socket, session, onLeave }) {
                 <div style={{ flex: 1, minWidth: 720 }}>
                     <div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
                         <div>
-                            <strong>Raum:</strong>{" "}
-                            <span style={{ fontFamily: "monospace" }}>{roomId}</span>
-                            <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>
-                                {isDm ? "DM" : "Spieler"}
-                            </span>
+                            <strong>Raum:</strong> <span style={{ fontFamily: "monospace" }}>{roomId}</span>
+                            <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>{isDm ? "DM" : "Spieler"}</span>
                         </div>
 
                         <button onClick={onLeave}>Verlassen</button>
-                        <button onClick={toggleFullscreen}>
-                            {isFullscreen ? "Fullscreen verlassen" : "Fullscreen"}
-                        </button>
+                        <button onClick={toggleFullscreen}>{isFullscreen ? "Fullscreen verlassen" : "Fullscreen"}</button>
 
                         <div style={{ flex: 1 }} />
 
@@ -784,7 +831,9 @@ export default function Board({ socket, session, onLeave }) {
                             />
                             <input value={mapW} onChange={(e) => setMapW(e.target.value)} style={{ width: 90 }} disabled={!isDm} />
                             <input value={mapH} onChange={(e) => setMapH(e.target.value)} style={{ width: 90 }} disabled={!isDm} />
-                            <button onClick={setMap} disabled={!isDm}>Karte setzen</button>
+                            <button onClick={setMap} disabled={!isDm}>
+                                Karte setzen
+                            </button>
                             <input type="file" accept="image/*" onChange={handleMapUpload} disabled={!isDm} />
 
                             <label style={{ display: "flex", alignItems: "center", gap: 6, marginLeft: 10 }}>
@@ -821,9 +870,7 @@ export default function Board({ socket, session, onLeave }) {
                             style={{ background: "#f6f6f6" }}
                         >
                             <Layer x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
-                                {bgImg && (
-                                    <KonvaImage image={bgImg} x={0} y={0} width={state.map.width} height={state.map.height} />
-                                )}
+                                {bgImg && <KonvaImage image={bgImg} x={0} y={0} width={state.map.width} height={state.map.height} />}
 
                                 {showGrid &&
                                     gridLines.map((pts, idx) => (
@@ -925,7 +972,7 @@ export default function Board({ socket, session, onLeave }) {
                                     );
                                 })}
 
-                                {/* EFFECTS: markers */}
+                                {/* EFFECTS: markers (2.5D wieder drin) */}
                                 {markers.map((m) => {
                                     const markerType = String(m.markerType || "OBJECT").toUpperCase();
                                     const isSel = m.id === selectedEffectId;
@@ -955,6 +1002,16 @@ export default function Board({ socket, session, onLeave }) {
                                                 handleDeleteEffect(m.id);
                                             }}
                                         >
+                                            {/* Bodenschatten (2.5D) */}
+                                            <Circle
+                                                x={0}
+                                                y={outerR * 0.32}
+                                                radius={outerR * 0.92}
+                                                fill={"rgba(0,0,0,0.22)"}
+                                                blurRadius={8}
+                                                listening={false}
+                                            />
+
                                             {isSel && (
                                                 <Circle
                                                     x={0}
@@ -969,6 +1026,7 @@ export default function Board({ socket, session, onLeave }) {
                                                 />
                                             )}
 
+                                            {/* Base */}
                                             <Circle
                                                 x={0}
                                                 y={0}
@@ -976,6 +1034,20 @@ export default function Board({ socket, session, onLeave }) {
                                                 fill={pres.fill}
                                                 stroke={pres.stroke}
                                                 strokeWidth={Math.max(2, Math.round(hexSize * 0.07))}
+                                                shadowColor={"rgba(0,0,0,0.35)"}
+                                                shadowBlur={10}
+                                                shadowOpacity={0.5}
+                                                shadowOffsetX={0}
+                                                shadowOffsetY={3}
+                                            />
+
+                                            {/* Highlight (2.5D) */}
+                                            <Circle
+                                                x={-outerR * 0.28}
+                                                y={-outerR * 0.28}
+                                                radius={outerR * 0.42}
+                                                fill={"rgba(255,255,255,0.25)"}
+                                                listening={false}
                                             />
 
                                             {dmOnlyOverlay && (
@@ -1003,7 +1075,7 @@ export default function Board({ socket, session, onLeave }) {
                                                 x={0}
                                                 y={0}
                                                 radius={innerR}
-                                                stroke={"rgba(0,0,0,0.15)"}
+                                                stroke={"rgba(0,0,0,0.18)"}
                                                 strokeWidth={1}
                                                 listening={false}
                                             />
@@ -1022,7 +1094,7 @@ export default function Board({ socket, session, onLeave }) {
                                     );
                                 })}
 
-                                {/* Persistent Attack Line */}
+                                {/* Persistent Attack Line (fixiert) */}
                                 {persistentLine && (
                                     <Group listening={false}>
                                         <Line
@@ -1054,33 +1126,25 @@ export default function Board({ socket, session, onLeave }) {
                                         token={t}
                                         isSelf={t.id === selfId}
                                         isDm={isDm}
-                                        selected={t.id === selectedId}
-                                        targeted={t.id === targetId}
+                                        selected={
+                                            attackLock ? t.id === attackPick.attackerId : t.id === selectedId
+                                        }
+                                        targeted={
+                                            attackLock ? t.id === attackPick.targetId : t.id === targetId
+                                        }
                                         hexSize={hexSize}
                                         mapW={state.map.width}
                                         mapH={state.map.height}
                                         onMove={(id, nx, ny) => moveToken(id, nx, ny)}
-                                        onClick={() => {
-                                            if (!selectedId || selectedId === t.id) {
-                                                setSelectedId(t.id);
-                                                setTargetId(null);
-                                            } else {
-                                                setTargetId(t.id);
-                                            }
-                                        }}
+                                        onClick={() => onTokenClick(t)}
+                                        onHpChange={(id, hp) => setEnemyHp(id, hp)}
                                     />
                                 ))}
 
                                 {/* placing hint */}
                                 {(placingEnemy || placeMode) && (
                                     <Group listening={false}>
-                                        <Rect
-                                            x={0}
-                                            y={0}
-                                            width={state.map.width}
-                                            height={state.map.height}
-                                            fill="rgba(0,0,0,0.08)"
-                                        />
+                                        <Rect x={0} y={0} width={state.map.width} height={state.map.height} fill="rgba(0,0,0,0.08)" />
                                         <Text
                                             text={
                                                 placingEnemy
@@ -1097,13 +1161,7 @@ export default function Board({ socket, session, onLeave }) {
                                             fill={"black"}
                                         />
                                         {placeMode?.visibility === "DM" && (
-                                            <Text
-                                                text={"🔒 nur DM sichtbar"}
-                                                x={20}
-                                                y={46}
-                                                fontSize={14}
-                                                fill={"rgba(0,0,0,0.7)"}
-                                            />
+                                            <Text text={"🔒 nur DM sichtbar"} x={20} y={46} fontSize={14} fill={"rgba(0,0,0,0.7)"} />
                                         )}
                                     </Group>
                                 )}
@@ -1112,11 +1170,10 @@ export default function Board({ socket, session, onLeave }) {
                     </div>
 
                     <div style={{ marginTop: 10, fontSize: 13, opacity: 0.8 }}>
-                        Steuerung: Token ziehen = bewegen (dein Token; DM kann Gegner ziehen).
-                        Zoom: Mausrad. Pan: Shift+Linksklick ziehen oder Mausrad-Klick ziehen.
-                        Auswahl: 1x klick = Angreifer, 2. klick = Ziel.
+                        Steuerung: Token ziehen = bewegen (dein Token; DM kann Gegner ziehen). Zoom: Mausrad. Pan: Shift+Linksklick ziehen
+                        oder Mausrad-Klick ziehen.
                         <br />
-                        Effekte: Marker/Walls platzieren per Linksklick. Löschen: Effekt anklicken → (nur DM) löschen.
+                        Angriff: Mit <b>„Angriff auswählen (Lock)”</b> fixierst du Angreifer/Ziel, damit der Pfeil nicht rutscht.
                     </div>
                 </div>
 
@@ -1147,6 +1204,54 @@ export default function Board({ socket, session, onLeave }) {
                         )}
                     </div>
 
+                    {/* ATTACK LOCK */}
+                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Angriff (fixiert)</div>
+
+                        <div style={{ display: "grid", gap: 8 }}>
+                            <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                                <input
+                                    type="checkbox"
+                                    checked={attackLock}
+                                    onChange={(e) => {
+                                        const v = e.target.checked;
+                                        setAttackLock(v);
+                                        if (!v) {
+                                            // beim Lock aus: Pfeil weg (damit es nicht verwirrt)
+                                            setAttackPick({ attackerId: null, targetId: null });
+                                        }
+                                    }}
+                                />
+                                Angriff auswählen (Lock)
+                            </label>
+
+                            <div style={{ fontSize: 13 }}>
+                                <div>
+                                    Angreifer: <strong>{lockedAttacker ? lockedAttacker.name : "—"}</strong>
+                                </div>
+                                <div>
+                                    Ziel: <strong>{lockedTarget ? lockedTarget.name : "—"}</strong>
+                                </div>
+                            </div>
+
+                            <div>
+                                <button onClick={triggerAttack} disabled={!canAttack}>
+                                    Angriff ins Log
+                                </button>
+                                <button
+                                    style={{ marginLeft: 8 }}
+                                    onClick={() => setAttackPick({ attackerId: null, targetId: null })}
+                                >
+                                    Neuen Angriff wählen
+                                </button>
+                            </div>
+
+                            <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Wenn Lock aktiv: Klicke <b>Angreifer</b> → <b>Ziel</b>. Danach bleibt der Pfeil fix.
+                            </div>
+                        </div>
+                    </div>
+
                     {/* ENEMY */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Gegner hinzufügen</div>
@@ -1155,6 +1260,19 @@ export default function Board({ socket, session, onLeave }) {
                             <div>
                                 <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Name</label>
                                 <input value={enemyName} onChange={(e) => setEnemyName(e.target.value)} style={{ width: "100%" }} />
+                            </div>
+
+                            <div style={{ display: "flex", gap: 8 }}>
+                                <div style={{ flex: 1 }}>
+                                    <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>HP</label>
+                                    <input
+                                        value={enemyHpInput}
+                                        onChange={(e) => setEnemyHpInput(e.target.value)}
+                                        style={{ width: "100%" }}
+                                        inputMode="numeric"
+                                    />
+                                </div>
+                                <div style={{ width: 1 }} />
                             </div>
 
                             <div>
@@ -1182,6 +1300,10 @@ export default function Board({ socket, session, onLeave }) {
                             >
                                 Gegner platzieren (Klick auf Karte)
                             </button>
+
+                            <div style={{ fontSize: 12, opacity: 0.75 }}>
+                                Hinweis: HP +/- am Token funktionieren vollständig, sobald der Server <code>token:setHp</code> unterstützt.
+                            </div>
                         </div>
                     </div>
 
@@ -1193,7 +1315,7 @@ export default function Board({ socket, session, onLeave }) {
                             <div>
                                 <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Aktion</label>
                                 <select value={eventKind} onChange={(e) => setEventKind(e.target.value)} style={{ width: "100%" }}>
-                                    <option value="ATTACK">Angriff</option>
+                                    <option value="ATTACK">Angriff (Auswahl via Lock-Box oben)</option>
                                     <option value="TREASURE">Eventmarker: Schatz</option>
                                     <option value="TRAP">Eventmarker: Falle</option>
                                     <option value="LEVER">Eventmarker: Hebel</option>
@@ -1206,38 +1328,11 @@ export default function Board({ socket, session, onLeave }) {
                                 </select>
                             </div>
 
-                            {eventKind === "ATTACK" && (
-                                <>
-                                    <div style={{ fontSize: 13 }}>
-                                        <div>Angreifer: <strong>{selected ? selected.name : "—"}</strong></div>
-                                        <div>Ziel: <strong>{target ? target.name : "—"}</strong></div>
-                                    </div>
-
-                                    <div>
-                                        <button onClick={triggerAttack} disabled={!canAttack}>Attack triggern</button>
-                                        <button
-                                            style={{ marginLeft: 8 }}
-                                            onClick={() => {
-                                                setSelectedId(null);
-                                                setTargetId(null);
-                                            }}
-                                        >
-                                            Auswahl löschen
-                                        </button>
-                                    </div>
-                                </>
-                            )}
-
                             {eventKind === "NOTE" && (
                                 <>
                                     <div>
                                         <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>Text</label>
-                                        <textarea
-                                            value={noteText}
-                                            onChange={(e) => setNoteText(e.target.value)}
-                                            rows={3}
-                                            style={{ width: "100%" }}
-                                        />
+                                        <textarea value={noteText} onChange={(e) => setNoteText(e.target.value)} rows={3} style={{ width: "100%" }} />
                                     </div>
                                     <button
                                         onClick={() => {
@@ -1442,23 +1537,39 @@ export default function Board({ socket, session, onLeave }) {
                         </div>
                     </div>
 
+                    {/* ANGRIFFS-LOG */}
+                    <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
+                        <div style={{ fontWeight: 700, marginBottom: 8 }}>Angriffs-Log (für alle)</div>
+                        <div style={{ maxHeight: 180, overflow: "auto", fontSize: 13, display: "grid", gap: 6 }}>
+                            {attackEvents.length === 0 && <div style={{ opacity: 0.7 }}>Noch keine Angriffe.</div>}
+                            {attackEvents
+                                .slice()
+                                .reverse()
+                                .map((ev) => (
+                                    <div key={ev.id} style={{ borderBottom: "1px solid #eee", paddingBottom: 6 }}>
+                                        <div style={{ opacity: 0.7, fontSize: 11 }}>{new Date(ev.at).toLocaleTimeString()}</div>
+                                        <div>{formatEventLine(ev)}</div>
+                                    </div>
+                                ))}
+                        </div>
+                    </div>
+
                     {/* SELECTED EFFECT */}
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10, marginBottom: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Ausgewählter Effekt</div>
 
                         {!selectedEffect ? (
-                            <div style={{ fontSize: 13, opacity: 0.7 }}>
-                                Kein Effekt ausgewählt. (Klick auf Wand/Marker)
-                            </div>
+                            <div style={{ fontSize: 13, opacity: 0.7 }}>Kein Effekt ausgewählt. (Klick auf Wand/Marker)</div>
                         ) : (
                             <div style={{ display: "grid", gap: 8 }}>
                                 <div style={{ fontSize: 13 }}>
-                                    <div><strong>Typ:</strong> {selectedEffect.kind}</div>
+                                    <div>
+                                        <strong>Typ:</strong> {selectedEffect.kind}
+                                    </div>
                                     {selectedEffect.kind === "wall" && (
                                         <div>
                                             <strong>Element:</strong>{" "}
-                                            {selectedEffect.element ||
-                                                (String(selectedEffect.label || "").includes("Feuer") ? "FIRE" : "ICE")}
+                                            {selectedEffect.element || (String(selectedEffect.label || "").includes("Feuer") ? "FIRE" : "ICE")}
                                         </div>
                                     )}
                                     {selectedEffect.kind === "marker" && (
@@ -1467,8 +1578,7 @@ export default function Board({ socket, session, onLeave }) {
                                         </div>
                                     )}
                                     <div>
-                                        <strong>Sichtbar:</strong>{" "}
-                                        {(selectedEffect.visibility || "ALL") === "DM" ? "🔒 nur DM" : "für alle"}
+                                        <strong>Sichtbar:</strong> {(selectedEffect.visibility || "ALL") === "DM" ? "🔒 nur DM" : "für alle"}
                                     </div>
                                 </div>
 
@@ -1477,9 +1587,7 @@ export default function Board({ socket, session, onLeave }) {
                                         Effekt löschen (DM)
                                     </button>
                                 ) : (
-                                    <div style={{ fontSize: 12, opacity: 0.7 }}>
-                                        Nur der DM kann Effekte löschen.
-                                    </div>
+                                    <div style={{ fontSize: 12, opacity: 0.7 }}>Nur der DM kann Effekte löschen.</div>
                                 )}
 
                                 <button onClick={() => setSelectedEffectId(null)}>Auswahl aufheben</button>
@@ -1491,18 +1599,13 @@ export default function Board({ socket, session, onLeave }) {
                     <div style={{ border: "1px solid #ddd", borderRadius: 10, padding: 10 }}>
                         <div style={{ fontWeight: 700, marginBottom: 8 }}>Event Log</div>
                         <div style={{ maxHeight: 320, overflow: "auto", fontSize: 13, display: "grid", gap: 6 }}>
-                            {visibleEventsForLog.length === 0 && (
-                                <div style={{ opacity: 0.7 }}>Noch keine Events.</div>
-                            )}
+                            {visibleEventsForLog.length === 0 && <div style={{ opacity: 0.7 }}>Noch keine Events.</div>}
                             {visibleEventsForLog
                                 .slice()
                                 .reverse()
                                 .map((ev) => (
                                     <div key={ev.id} style={{ borderBottom: "1px solid #eee", paddingBottom: 6 }}>
-                                        <div style={{ opacity: 0.7, fontSize: 11 }}>
-                                            {new Date(ev.at).toLocaleTimeString()}{" "}
-                                            {isDm && (ev?.visibility || "ALL") === "DM" ? " · 🔒 DM" : ""}
-                                        </div>
+                                        <div style={{ opacity: 0.7, fontSize: 11 }}>{new Date(ev.at).toLocaleTimeString()}</div>
                                         <div>{formatEventLine(ev)}</div>
                                     </div>
                                 ))}
@@ -1522,12 +1625,7 @@ function LabelInput({ label, value, setValue, disabled }) {
     return (
         <div>
             <label style={{ display: "block", fontSize: 12, opacity: 0.8 }}>{label}</label>
-            <input
-                value={value}
-                onChange={(e) => setValue(e.target.value)}
-                style={{ width: "100%" }}
-                disabled={disabled}
-            />
+            <input value={value} onChange={(e) => setValue(e.target.value)} style={{ width: "100%" }} disabled={disabled} />
         </div>
     );
 }
@@ -1576,18 +1674,7 @@ function ArrowHead({ ax, ay, bx, by, color, hexSize }) {
     );
 }
 
-function Token({
-    token,
-    isSelf,
-    isDm,
-    onMove,
-    hexSize,
-    mapW,
-    mapH,
-    onClick,
-    selected,
-    targeted,
-}) {
+function Token({ token, isSelf, isDm, onMove, onHpChange, hexSize, mapW, mapH, onClick, selected, targeted }) {
     const avatar = useHtmlImage(token.imgUrl);
     const isEnemy = token.kind === "enemy";
     const ringColor = getTokenRingColor(token);
@@ -1602,8 +1689,16 @@ function Token({
     // DM can drag enemies
     const canDrag = isSelf || (isDm && isEnemy);
 
-    // IMPORTANT: Provide a real hit area (because most children are listening={false})
+    // IMPORTANT: Provide a real hit area
     const hitHexPoints = useMemo(() => hexCornerPoints(0, 0, tokenHexSize), [tokenHexSize]);
+
+    const hp = typeof token.hp === "number" ? token.hp : (isEnemy ? 0 : null);
+
+    const bumpHp = (delta) => {
+        if (!isDm || !isEnemy) return;
+        const next = Math.max(0, (typeof hp === "number" ? hp : 0) + delta);
+        onHpChange?.(token.id, next);
+    };
 
     return (
         <Group
@@ -1611,7 +1706,6 @@ function Token({
             y={token.y}
             draggable={canDrag}
             onMouseDown={(e) => {
-                // make sure Stage onMouseDown doesn't interfere with drag/click
                 e.cancelBubble = true;
             }}
             onDragStart={(e) => {
@@ -1624,7 +1718,6 @@ function Token({
                 e.cancelBubble = true;
                 onClick?.();
             }}
-            // Keep hex clipping for visuals
             clipFunc={(ctx) => {
                 ctx.beginPath();
                 ctx.moveTo(hexPts[0].x, hexPts[0].y);
@@ -1647,13 +1740,7 @@ function Token({
             }}
         >
             {/* Hit area (transparent) */}
-            <Line
-                points={hitHexPoints}
-                closed={true}
-                fill={"rgba(0,0,0,0.001)"}
-                strokeWidth={0}
-                listening={true}
-            />
+            <Line points={hitHexPoints} closed={true} fill={"rgba(0,0,0,0.001)"} strokeWidth={0} listening={true} />
 
             {/* Background */}
             <Rect
@@ -1667,14 +1754,7 @@ function Token({
 
             {/* Avatar / fallback */}
             {avatar ? (
-                <KonvaImage
-                    image={avatar}
-                    x={-hexW / 2}
-                    y={-hexH / 2}
-                    width={hexW}
-                    height={hexH}
-                    listening={false}
-                />
+                <KonvaImage image={avatar} x={-hexW / 2} y={-hexH / 2} width={hexW} height={hexH} listening={false} />
             ) : (
                 <Rect
                     x={-hexW / 2}
@@ -1708,6 +1788,74 @@ function Token({
                     opacity={0.95}
                     listening={false}
                 />
+            )}
+
+            {/* HP badge (für enemies) */}
+            {isEnemy && (
+                <Group x={0} y={-tokenHexSize * 0.78}>
+                    <Rect
+                        x={-30}
+                        y={-12}
+                        width={60}
+                        height={22}
+                        cornerRadius={10}
+                        fill={"rgba(0,0,0,0.55)"}
+                        shadowColor={"rgba(0,0,0,0.4)"}
+                        shadowBlur={8}
+                        shadowOpacity={0.5}
+                        shadowOffsetY={2}
+                        listening={false}
+                    />
+                    <Text
+                        text={`HP ${typeof hp === "number" ? hp : 0}`}
+                        x={-28}
+                        y={-10}
+                        width={56}
+                        align="center"
+                        fontSize={12}
+                        fill={"white"}
+                        listening={false}
+                    />
+
+                    {/* +/- nur DM */}
+                    {isDm && (
+                        <Group>
+                            <Rect
+                                x={-52}
+                                y={-12}
+                                width={18}
+                                height={22}
+                                cornerRadius={8}
+                                fill={"rgba(255,255,255,0.75)"}
+                                onMouseDown={(e) => {
+                                    e.cancelBubble = true;
+                                }}
+                                onClick={(e) => {
+                                    e.cancelBubble = true;
+                                    bumpHp(-1);
+                                }}
+                            />
+                            <Text text={"-"} x={-52} y={-11} width={18} align="center" fontSize={16} fill={"black"} listening={false} />
+
+                            <Rect
+                                x={34}
+                                y={-12}
+                                width={18}
+                                height={22}
+                                cornerRadius={8}
+                                fill={"rgba(255,255,255,0.75)"}
+                                onMouseDown={(e) => {
+                                    e.cancelBubble = true;
+                                }}
+                                onClick={(e) => {
+                                    e.cancelBubble = true;
+                                    bumpHp(+1);
+                                }}
+                            />
+                            <Text text={"+"} x={34} y={-11} width={18} align="center" fontSize={16} fill={"black"} listening={false} />
+                        </Group>
+                    )}
+                </Group>
             )}
 
             <Text
